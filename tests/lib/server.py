@@ -5,8 +5,7 @@ import threading
 from base64 import b64encode
 from contextlib import contextmanager
 from textwrap import dedent
-from types import TracebackType
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, Iterator
 from unittest.mock import Mock
 
 from werkzeug.serving import BaseWSGIServer, WSGIRequestHandler
@@ -14,18 +13,14 @@ from werkzeug.serving import make_server as _make_server
 
 from .compat import nullcontext
 
-Environ = Dict[str, str]
-Status = str
-Headers = Iterable[Tuple[str, str]]
-ExcInfo = Tuple[Type[BaseException], BaseException, TracebackType]
-Write = Callable[[bytes], None]
-StartResponse = Callable[[Status, Headers, Optional[ExcInfo]], Write]
-Body = List[bytes]
-Responder = Callable[[Environ, StartResponse], Body]
+if TYPE_CHECKING:
+    from wsgi import StartResponse, WSGIApplication, WSGIEnvironment
+
+Body = Iterable[bytes]
 
 
 class MockServer(BaseWSGIServer):
-    mock = Mock()  # type: Mock
+    mock: Mock = Mock()
 
 
 # Applies on Python 2 and Windows.
@@ -34,10 +29,10 @@ if not hasattr(signal, "pthread_sigmask"):
     # practice.
     blocked_signals = nullcontext
 else:
+
     @contextmanager
     def blocked_signals():
-        """Block all signals for e.g. starting a worker thread.
-        """
+        """Block all signals for e.g. starting a worker thread."""
         # valid_signals() was added in Python 3.8 (and not using it results
         # in a warning on pthread_sigmask() call)
         try:
@@ -77,24 +72,24 @@ class _RequestHandler(WSGIRequestHandler):
         return environ
 
 
-def _mock_wsgi_adapter(mock):
-    # type: (Callable[[Environ, StartResponse], Responder]) -> Responder
+def _mock_wsgi_adapter(
+    mock: Callable[["WSGIEnvironment", "StartResponse"], "WSGIApplication"]
+) -> "WSGIApplication":
     """Uses a mock to record function arguments and provide
     the actual function that should respond.
     """
-    def adapter(environ, start_response):
-        # type: (Environ, StartResponse) -> Body
+
+    def adapter(environ: "WSGIEnvironment", start_response: "StartResponse") -> Body:
         try:
             responder = mock(environ, start_response)
         except StopIteration:
-            raise RuntimeError('Ran out of mocked responses.')
+            raise RuntimeError("Ran out of mocked responses.")
         return responder(environ, start_response)
 
     return adapter
 
 
-def make_mock_server(**kwargs):
-    # type: (Any) -> MockServer
+def make_mock_server(**kwargs: Any) -> MockServer:
     """Creates a mock HTTP(S) server listening on a random port on localhost.
 
     The `mock` property of the returned server provides and records all WSGI
@@ -134,10 +129,8 @@ def make_mock_server(**kwargs):
 
 
 @contextmanager
-def server_running(server):
-    # type: (BaseWSGIServer) -> None
-    """Context manager for running the provided server in a separate thread.
-    """
+def server_running(server: BaseWSGIServer) -> Iterator[None]:
+    """Context manager for running the provided server in a separate thread."""
     thread = threading.Thread(target=server.serve_forever)
     thread.daemon = True
     with blocked_signals():
@@ -152,93 +145,92 @@ def server_running(server):
 # Helper functions for making responses in a declarative way.
 
 
-def text_html_response(text):
-    # type: (str) -> Responder
-    def responder(environ, start_response):
-        # type: (Environ, StartResponse) -> Body
-        start_response("200 OK", [
-            ("Content-Type", "text/html; charset=UTF-8"),
-        ])
-        return [text.encode('utf-8')]
+def text_html_response(text: str) -> "WSGIApplication":
+    def responder(environ: "WSGIEnvironment", start_response: "StartResponse") -> Body:
+        start_response(
+            "200 OK",
+            [
+                ("Content-Type", "text/html; charset=UTF-8"),
+            ],
+        )
+        return [text.encode("utf-8")]
 
     return responder
 
 
-def html5_page(text):
-    # type: (str) -> str
-    return dedent("""
+def html5_page(text: str) -> str:
+    return (
+        dedent(
+            """
     <!DOCTYPE html>
     <html>
       <body>
         {}
       </body>
     </html>
-    """).strip().format(text)
-
-
-def index_page(spec):
-    # type: (Dict[str, str]) -> Responder
-    def link(name, value):
-        return '<a href="{}">{}</a>'.format(
-            value, name
+    """
         )
+        .strip()
+        .format(text)
+    )
 
-    links = ''.join(link(*kv) for kv in spec.items())
+
+def index_page(spec: Dict[str, str]) -> "WSGIApplication":
+    def link(name, value):
+        return '<a href="{}">{}</a>'.format(value, name)
+
+    links = "".join(link(*kv) for kv in spec.items())
     return text_html_response(html5_page(links))
 
 
-def package_page(spec):
-    # type: (Dict[str, str]) -> Responder
+def package_page(spec: Dict[str, str]) -> "WSGIApplication":
     def link(name, value):
-        return '<a href="{}">{}</a>'.format(
-            value, name
-        )
+        return '<a href="{}">{}</a>'.format(value, name)
 
-    links = ''.join(link(*kv) for kv in spec.items())
+    links = "".join(link(*kv) for kv in spec.items())
     return text_html_response(html5_page(links))
 
 
-def file_response(path):
-    # type: (str) -> Responder
-    def responder(environ, start_response):
-        # type: (Environ, StartResponse) -> Body
+def file_response(path: str) -> "WSGIApplication":
+    def responder(environ: "WSGIEnvironment", start_response: "StartResponse") -> Body:
         size = os.stat(path).st_size
         start_response(
-            "200 OK", [
+            "200 OK",
+            [
                 ("Content-Type", "application/octet-stream"),
                 ("Content-Length", str(size)),
             ],
         )
 
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             return [f.read()]
 
     return responder
 
 
-def authorization_response(path):
-    # type: (str) -> Responder
+def authorization_response(path: str) -> "WSGIApplication":
     correct_auth = "Basic " + b64encode(b"USERNAME:PASSWORD").decode("ascii")
 
-    def responder(environ, start_response):
-        # type: (Environ, StartResponse) -> Body
+    def responder(environ: "WSGIEnvironment", start_response: "StartResponse") -> Body:
 
-        if environ.get('HTTP_AUTHORIZATION') == correct_auth:
+        if environ.get("HTTP_AUTHORIZATION") == correct_auth:
             size = os.stat(path).st_size
             start_response(
-                "200 OK", [
+                "200 OK",
+                [
                     ("Content-Type", "application/octet-stream"),
                     ("Content-Length", str(size)),
                 ],
             )
         else:
             start_response(
-                "401 Unauthorized", [
+                "401 Unauthorized",
+                [
                     ("WWW-Authenticate", "Basic"),
                 ],
             )
 
-        with open(path, 'rb') as f:
+        with open(path, "rb") as f:
             return [f.read()]
 
     return responder

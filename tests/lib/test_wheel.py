@@ -25,8 +25,7 @@ def test_message_from_dict_multiple_values():
     assert set(message.get_all("a")) == {"1", "2"}
 
 
-def message_from_bytes(contents):
-    # type: (bytes) -> Message
+def message_from_bytes(contents: bytes) -> Message:
     return message_from_string(contents.decode("utf-8"))
 
 
@@ -161,19 +160,20 @@ def test_make_wheel_default_record():
         record_bytes = z.read("simple-0.1.0.dist-info/RECORD")
         record_text = record_bytes.decode()
         record_rows = list(csv.reader(record_text.splitlines()))
-        records = {
-            row[0]: row[1:] for row in record_rows
-        }
+        records = {row[0]: row[1:] for row in record_rows}
 
         expected = {
             "simple/__init__.py": [
-                "sha256=ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs", "1"
+                "sha256=ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+                "1",
             ],
             "simple-0.1.0.data/purelib/info.txt": [
-                "sha256=Ln0sA6lQeuJl7PW1NWiFpTOTogKdJBOUmXJloaJa78Y", "1"
+                "sha256=Ln0sA6lQeuJl7PW1NWiFpTOTogKdJBOUmXJloaJa78Y",
+                "1",
             ],
             "simple-0.1.0.dist-info/LICENSE": [
-                "sha256=PiPoFgA5WUoziU9lZOGxNIu9egCI1CxKy3PurtWcAJ0", "1"
+                "sha256=PiPoFgA5WUoziU9lZOGxNIu9egCI1CxKy3PurtWcAJ0",
+                "1",
             ],
             "simple-0.1.0.dist-info/RECORD": ["", ""],
         }

@@ -7,9 +7,10 @@ import sys
 from functools import partial
 from itertools import chain
 from pathlib import Path
+from typing import Iterator, List, Set
 
 
-def make_socket_file(path):
+def make_socket_file(path: str) -> None:
     # Socket paths are limited to 108 characters (sometimes less) so we
     # chdir before creating it and use a relative path name.
     cwd = os.getcwd()
@@ -21,7 +22,7 @@ def make_socket_file(path):
         os.chdir(cwd)
 
 
-def make_unreadable_file(path):
+def make_unreadable_file(path: str) -> None:
     Path(path).touch()
     os.chmod(path, 0o000)
     if sys.platform == "win32":
@@ -33,8 +34,8 @@ def make_unreadable_file(path):
         subprocess.check_call(args)
 
 
-def get_filelist(base):
-    def join(dirpath, dirnames, filenames):
+def get_filelist(base: str) -> Set[str]:
+    def join(dirpath: str, dirnames: List[str], filenames: List[str]) -> Iterator[str]:
         relative_dirpath = os.path.relpath(dirpath, base)
         join_dirpath = partial(os.path.join, relative_dirpath)
         return chain(
@@ -42,6 +43,4 @@ def get_filelist(base):
             (join_dirpath(p) for p in filenames),
         )
 
-    return set(chain.from_iterable(
-        join(*dirinfo) for dirinfo in os.walk(base)
-    ))
+    return set(chain.from_iterable(join(*dirinfo) for dirinfo in os.walk(base)))

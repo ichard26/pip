@@ -12,7 +12,7 @@ from pip._vendor.packaging.version import InvalidVersion, Version
 
 from pip._internal.cache import WheelCache
 from pip._internal.exceptions import InvalidWheelFilename, UnsupportedWheel
-from pip._internal.metadata import get_wheel_distribution
+from pip._internal.metadata import FilesystemWheel, get_wheel_distribution
 from pip._internal.models.link import Link
 from pip._internal.models.wheel import Wheel
 from pip._internal.operations.build.wheel import build_wheel_pep517
@@ -28,14 +28,13 @@ from pip._internal.vcs import vcs
 
 logger = logging.getLogger(__name__)
 
-_egg_info_re = re.compile(r'([a-z0-9_.]+)-([a-z0-9_.!+-]+)', re.IGNORECASE)
+_egg_info_re = re.compile(r"([a-z0-9_.]+)-([a-z0-9_.!+-]+)", re.IGNORECASE)
 
 BinaryAllowedPredicate = Callable[[InstallRequirement], bool]
 BuildResult = Tuple[List[InstallRequirement], List[InstallRequirement]]
 
 
-def _contains_egg_info(s):
-    # type: (str) -> bool
+def _contains_egg_info(s: str) -> bool:
     """Determine whether the string looks like an egg_info.
 
     :param s: The string to parse. E.g. foo-2.1
@@ -44,11 +43,10 @@ def _contains_egg_info(s):
 
 
 def _should_build(
-    req,  # type: InstallRequirement
-    need_wheel,  # type: bool
-    check_binary_allowed,  # type: BinaryAllowedPredicate
-):
-    # type: (...) -> bool
+    req: InstallRequirement,
+    need_wheel: bool,
+    check_binary_allowed: BinaryAllowedPredicate,
+) -> bool:
     """Return whether an InstallRequirement should be built into a wheel."""
     if req.constraint:
         # never build requirements that are merely constraints
@@ -56,7 +54,8 @@ def _should_build(
     if req.is_wheel:
         if need_wheel:
             logger.info(
-                'Skipping %s, due to already being wheel.', req.name,
+                "Skipping %s, due to already being wheel.",
+                req.name,
             )
         return False
 
@@ -75,8 +74,8 @@ def _should_build(
 
     if not check_binary_allowed(req):
         logger.info(
-            "Skipping wheel build for %s, due to binaries "
-            "being disabled for it.", req.name,
+            "Skipping wheel build for %s, due to binaries being disabled for it.",
+            req.name,
         )
         return False
 
@@ -84,7 +83,8 @@ def _should_build(
         # we don't build legacy requirements if wheel is not installed
         logger.info(
             "Using legacy 'setup.py install' for %s, "
-            "since package 'wheel' is not installed.", req.name,
+            "since package 'wheel' is not installed.",
+            req.name,
         )
         return False
 
@@ -92,28 +92,23 @@ def _should_build(
 
 
 def should_build_for_wheel_command(
-    req,  # type: InstallRequirement
-):
-    # type: (...) -> bool
-    return _should_build(
-        req, need_wheel=True, check_binary_allowed=_always_true
-    )
+    req: InstallRequirement,
+) -> bool:
+    return _should_build(req, need_wheel=True, check_binary_allowed=_always_true)
 
 
 def should_build_for_install_command(
-    req,  # type: InstallRequirement
-    check_binary_allowed,  # type: BinaryAllowedPredicate
-):
-    # type: (...) -> bool
+    req: InstallRequirement,
+    check_binary_allowed: BinaryAllowedPredicate,
+) -> bool:
     return _should_build(
         req, need_wheel=False, check_binary_allowed=check_binary_allowed
     )
 
 
 def _should_cache(
-    req,  # type: InstallRequirement
-):
-    # type: (...) -> Optional[bool]
+    req: InstallRequirement,
+) -> Optional[bool]:
     """
     Return whether a built InstallRequirement can be stored in the persistent
     wheel cache, assuming the wheel cache is available, and _should_build()
@@ -144,10 +139,9 @@ def _should_cache(
 
 
 def _get_cache_dir(
-    req,  # type: InstallRequirement
-    wheel_cache,  # type: WheelCache
-):
-    # type: (...) -> str
+    req: InstallRequirement,
+    wheel_cache: WheelCache,
+) -> str:
     """Return the persistent or temporary cache directory where the built
     wheel need to be stored.
     """
@@ -160,13 +154,11 @@ def _get_cache_dir(
     return cache_dir
 
 
-def _always_true(_):
-    # type: (Any) -> bool
+def _always_true(_: Any) -> bool:
     return True
 
 
-def _verify_one(req, wheel_path):
-    # type: (InstallRequirement, str) -> None
+def _verify_one(req: InstallRequirement, wheel_path: str) -> None:
     canonical_name = canonicalize_name(req.name or "")
     w = Wheel(os.path.basename(wheel_path))
     if canonicalize_name(w.name) != canonical_name:
@@ -174,7 +166,7 @@ def _verify_one(req, wheel_path):
             "Wheel has unexpected file name: expected {!r}, "
             "got {!r}".format(canonical_name, w.name),
         )
-    dist = get_wheel_distribution(wheel_path, canonical_name)
+    dist = get_wheel_distribution(FilesystemWheel(wheel_path), canonical_name)
     dist_verstr = str(dist.version)
     if canonicalize_version(dist_verstr) != canonicalize_version(w.version):
         raise InvalidWheelFilename(
@@ -189,8 +181,7 @@ def _verify_one(req, wheel_path):
     except InvalidVersion:
         msg = f"Invalid Metadata-Version: {metadata_version_value}"
         raise UnsupportedWheel(msg)
-    if (metadata_version >= Version("1.2")
-            and not isinstance(dist.version, Version)):
+    if metadata_version >= Version("1.2") and not isinstance(dist.version, Version):
         raise UnsupportedWheel(
             "Metadata 1.2 mandates PEP 440 version, "
             "but {!r} is not".format(dist_verstr)
@@ -198,13 +189,12 @@ def _verify_one(req, wheel_path):
 
 
 def _build_one(
-    req,  # type: InstallRequirement
-    output_dir,  # type: str
-    verify,  # type: bool
-    build_options,  # type: List[str]
-    global_options,  # type: List[str]
-):
-    # type: (...) -> Optional[str]
+    req: InstallRequirement,
+    output_dir: str,
+    verify: bool,
+    build_options: List[str],
+    global_options: List[str],
+) -> Optional[str]:
     """Build one wheel.
 
     :return: The filename of the built wheel, or None if the build failed.
@@ -214,7 +204,8 @@ def _build_one(
     except OSError as e:
         logger.warning(
             "Building wheel for %s failed: %s",
-            req.name, e,
+            req.name,
+            e,
         )
         return None
 
@@ -233,22 +224,28 @@ def _build_one(
 
 
 def _build_one_inside_env(
-    req,  # type: InstallRequirement
-    output_dir,  # type: str
-    build_options,  # type: List[str]
-    global_options,  # type: List[str]
-):
-    # type: (...) -> Optional[str]
+    req: InstallRequirement,
+    output_dir: str,
+    build_options: List[str],
+    global_options: List[str],
+) -> Optional[str]:
     with TempDirectory(kind="wheel") as temp_dir:
         assert req.name
         if req.use_pep517:
             assert req.metadata_directory
             assert req.pep517_backend
+            if global_options:
+                logger.warning(
+                    "Ignoring --global-option when building %s using PEP 517", req.name
+                )
+            if build_options:
+                logger.warning(
+                    "Ignoring --build-option when building %s using PEP 517", req.name
+                )
             wheel_path = build_wheel_pep517(
                 name=req.name,
                 backend=req.pep517_backend,
                 metadata_directory=req.metadata_directory,
-                build_options=build_options,
                 tempd=temp_dir.path,
             )
         else:
@@ -267,16 +264,20 @@ def _build_one_inside_env(
             try:
                 wheel_hash, length = hash_file(wheel_path)
                 shutil.move(wheel_path, dest_path)
-                logger.info('Created wheel for %s: '
-                            'filename=%s size=%d sha256=%s',
-                            req.name, wheel_name, length,
-                            wheel_hash.hexdigest())
-                logger.info('Stored in directory: %s', output_dir)
+                logger.info(
+                    "Created wheel for %s: filename=%s size=%d sha256=%s",
+                    req.name,
+                    wheel_name,
+                    length,
+                    wheel_hash.hexdigest(),
+                )
+                logger.info("Stored in directory: %s", output_dir)
                 return dest_path
             except Exception as e:
                 logger.warning(
                     "Building wheel for %s failed: %s",
-                    req.name, e,
+                    req.name,
+                    e,
                 )
         # Ignore return, we can't do anything else useful.
         if not req.use_pep517:
@@ -284,30 +285,28 @@ def _build_one_inside_env(
         return None
 
 
-def _clean_one_legacy(req, global_options):
-    # type: (InstallRequirement, List[str]) -> bool
+def _clean_one_legacy(req: InstallRequirement, global_options: List[str]) -> bool:
     clean_args = make_setuptools_clean_args(
         req.setup_py_path,
         global_options=global_options,
     )
 
-    logger.info('Running setup.py clean for %s', req.name)
+    logger.info("Running setup.py clean for %s", req.name)
     try:
         call_subprocess(clean_args, cwd=req.source_dir)
         return True
     except Exception:
-        logger.error('Failed cleaning build dir for %s', req.name)
+        logger.error("Failed cleaning build dir for %s", req.name)
         return False
 
 
 def build(
-    requirements,  # type: Iterable[InstallRequirement]
-    wheel_cache,  # type: WheelCache
-    verify,  # type: bool
-    build_options,  # type: List[str]
-    global_options,  # type: List[str]
-):
-    # type: (...) -> BuildResult
+    requirements: Iterable[InstallRequirement],
+    wheel_cache: WheelCache,
+    verify: bool,
+    build_options: List[str],
+    global_options: List[str],
+) -> BuildResult:
     """Build wheels.
 
     :return: The list of InstallRequirement that succeeded to build and
@@ -318,8 +317,8 @@ def build(
 
     # Build the wheels.
     logger.info(
-        'Building wheels for collected packages: %s',
-        ', '.join(req.name for req in requirements),  # type: ignore
+        "Building wheels for collected packages: %s",
+        ", ".join(req.name for req in requirements),  # type: ignore
     )
 
     with indent_log():
@@ -341,13 +340,13 @@ def build(
     # notify success/failure
     if build_successes:
         logger.info(
-            'Successfully built %s',
-            ' '.join([req.name for req in build_successes]),  # type: ignore
+            "Successfully built %s",
+            " ".join([req.name for req in build_successes]),  # type: ignore
         )
     if build_failures:
         logger.info(
-            'Failed to build %s',
-            ' '.join([req.name for req in build_failures]),  # type: ignore
+            "Failed to build %s",
+            " ".join([req.name for req in build_failures]),  # type: ignore
         )
     # Return a list of requirements that failed to build
     return build_successes, build_failures

@@ -15,16 +15,10 @@ kinds = pip._internal.configuration.kinds
 
 
 class ConfigurationMixin:
-
     def setup(self):
         self.configuration = pip._internal.configuration.Configuration(
             isolated=False,
         )
-        self._files_to_clear = []
-
-    def teardown(self):
-        for fname in self._files_to_clear:
-            fname.stop()
 
     def patch_configuration(self, variant, di):
         old = self.configuration._load_config_files
@@ -41,9 +35,7 @@ class ConfigurationMixin:
     @contextlib.contextmanager
     def tmpfile(self, contents):
         # Create a temporary file
-        fd, path = tempfile.mkstemp(
-            prefix="pip_", suffix="_config.ini", text=True
-        )
+        fd, path = tempfile.mkstemp(prefix="pip_", suffix="_config.ini", text=True)
         os.close(fd)
 
         contents = textwrap.dedent(contents).lstrip()
@@ -54,8 +46,3 @@ class ConfigurationMixin:
         yield path
 
         os.remove(path)
-
-    @staticmethod
-    def get_file_contents(path):
-        with open(path) as f:
-            return f.read()

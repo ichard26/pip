@@ -17,32 +17,9 @@ repos:
     exclude: .patch
 
 - repo: https://github.com/psf/black
-  rev: 20.8b1
+  rev: 21.7b0
   hooks:
   - id: black
-    exclude: |
-      (?x)
-        ^src/pip/_internal/commands|
-        ^src/pip/_internal/index|
-        ^src/pip/_internal/models|
-        ^src/pip/_internal/network|
-        ^src/pip/_internal/operations|
-        ^src/pip/_internal/req|
-        ^src/pip/_internal/vcs|
-        ^src/pip/_internal/\w+\.py$|
-        ^src/pip/__main__.py$|
-        ^tools/|
-        # Tests
-        ^tests/conftest.py|
-        ^tests/lib|
-        ^tests/data|
-        ^tests/unit|
-        ^tests/functional/(?!test_install)|
-        ^tests/functional/test_install|
-        # Files in the root of the repository
-        ^setup.py|
-        # A blank ignore, to avoid merge conflicts later.
-        ^$
 
 - repo: https://gitlab.com/pycqa/flake8
   rev: 3.8.4
@@ -51,6 +28,7 @@ repos:
     additional_dependencies: [
         'flake8-bugbear==20.1.4',
         'flake8-logging-format==0.6.0',
+        'flake8-implicit-str-concat==0.2.0',
     ]
     exclude: tests/data
 
@@ -61,12 +39,18 @@ repos:
     files: \.py$
 
 - repo: https://github.com/pre-commit/mirrors-mypy
-  rev: v0.800
+  rev: v0.910
   hooks:
   - id: mypy
-    exclude: tests
-    args: ["--pretty"]
-    additional_dependencies: ['nox==2020.12.31']
+    exclude: tests/data
+    args: ["--pretty", "--show-error-codes"]
+    additional_dependencies: [
+        'keyring==23.0.1',
+        'nox==2021.6.12',
+        'types-docutils==0.1.8',
+        'types-setuptools==57.0.2',
+        'types-six==0.1.9',
+    ]
 
 - repo: https://github.com/pre-commit/pygrep-hooks
   rev: v1.7.0
