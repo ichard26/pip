@@ -167,7 +167,7 @@ class VirtualEnvironment:
         self._create(clear=True)
 
     def move(self, location: str) -> None:
-        shutil.move(self.location, location)
+        shutil.move(str(self.location), location)
         self.location = Path(location)
         self._update_paths()
 

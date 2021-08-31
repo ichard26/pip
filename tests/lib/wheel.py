@@ -25,6 +25,7 @@ from typing import (
 from zipfile import ZipFile
 
 from pip._vendor.requests.structures import CaseInsensitiveDict
+
 from pip._internal.metadata import BaseDistribution, MemoryWheel, get_wheel_distribution
 
 # As would be used in metadata

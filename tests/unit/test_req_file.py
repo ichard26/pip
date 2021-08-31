@@ -756,7 +756,10 @@ class TestParseRequirements:
         with requirements_file(content, tmpdir) as reqs_file:
             req = next(
                 parse_reqfile(
-                    str(reqs_file.resolve()), finder=finder, options=options, session=session
+                    str(reqs_file.resolve()),
+                    finder=finder,
+                    options=options,
+                    session=session,
                 )
             )
 

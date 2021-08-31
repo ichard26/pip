@@ -325,8 +325,8 @@ class TestPipResult:
             maybe = "" if without_egg_link else "not "
             raise TestFailure(f"{pth_file} unexpectedly {maybe}updated by install")
 
-        if (pkg_dir in self.files_created) == (Path(curdir) in without_files):
-            maybe = "not " if curdir in without_files else ""
+        if (pkg_dir in self.files_created) == (Path(os.curdir) in without_files):
+            maybe = "not " if os.curdir in without_files else ""
             files = sorted(self.files_created)
             raise TestFailure(
                 textwrap.dedent(

@@ -133,7 +133,9 @@ class TestRequirementSet:
         non-wheel installs.
         """
         reqset = RequirementSet()
-        req = install_req_from_editable(str(data.packages.joinpath("LocalEnvironMarker")))
+        req = install_req_from_editable(
+            str(data.packages.joinpath("LocalEnvironMarker"))
+        )
         req.user_supplied = True
         reqset.add_requirement(req)
         finder = make_test_finder(find_links=[data.find_links])
