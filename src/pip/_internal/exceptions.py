@@ -268,8 +268,19 @@ class DistributionNotFound(InstallationError):
     """Raised when a distribution cannot be found to satisfy a requirement"""
 
 
-class RequirementsFileParseError(InstallationError):
+class RequirementsFileParseError(DiagnosticPipError, InstallationError):
     """Raised when a general error occurs parsing a requirements file line."""
+
+    reference = "requirements-file-parse-error"
+
+    def __init__(
+        self, line: str, line_number: int, *, reason: str, filepath: str
+    ) -> None:
+        message = Text(
+            f"Line {line_number} of requirements file {filepath} is invalid: "
+        )
+        message = message.append(f"'{line}'", "green")
+        super().__init__(message=message, context=Text(reason, "red"), hint_stmt=None)
 
 
 class BestVersionAlreadyInstalled(PipError):
@@ -786,3 +797,21 @@ class InvalidRequirement(DiagnosticPipError):
             return False
 
         return True
+
+
+class RequirementsFileFetchError(DiagnosticPipError):
+    reference = "could-not-fetch-requirement-file"
+
+    def __init__(self, req: str, error: Exception, *, is_url: bool):
+        context = None
+        if isinstance(error, FileNotFoundError):
+            context = Text("The file does not exist.", "red")
+        else:
+            context = Text(str(error), style="red")
+
+        verb = "fetch" if is_url else "open"
+        super().__init__(
+            message=f"Could not {verb} requirement file: {escape(req)}",
+            context=context,
+            hint_stmt=None,
+        )

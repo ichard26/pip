@@ -22,7 +22,10 @@ from typing import (
 )
 
 from pip._internal.cli import cmdoptions
-from pip._internal.exceptions import InstallationError, RequirementsFileParseError
+from pip._internal.exceptions import (
+    RequirementsFileFetchError,
+    RequirementsFileParseError,
+)
 from pip._internal.models.search_scope import SearchScope
 from pip._internal.network.session import PipSession
 from pip._internal.network.utils import raise_for_status
@@ -194,7 +197,7 @@ def handle_requirement_line(
             if dest in line.opts.__dict__ and line.opts.__dict__[dest]:
                 req_options[dest] = line.opts.__dict__[dest]
 
-        line_source = f"line {line.lineno} of {line.filename}"
+        line_source = f"line {line.lineno} of requirements file {line.filename}"
         return ParsedRequirement(
             requirement=line.requirement,
             is_editable=line.is_editable,
@@ -376,9 +379,9 @@ class RequirementsFileParser:
             try:
                 args_str, opts = self._line_parser(line)
             except OptionParsingError as e:
-                # add offending line
-                msg = f"Invalid requirement: {line}\n{e.msg}"
-                raise RequirementsFileParseError(msg)
+                raise RequirementsFileParseError(
+                    line, line_number, reason=e.msg.strip(), filepath=filename
+                )
 
             yield ParsedLine(
                 filename,
@@ -454,6 +457,8 @@ def build_parser() -> optparse.OptionParser:
     # NOTE: mypy disallows assigning to a method
     #       https://github.com/python/mypy/issues/2427
     parser.exit = parser_exit  # type: ignore
+    # Suppress "Usage: pip [options]" messages.
+    parser.print_usage = lambda *args, **kwargs: None  # type: ignore
 
     return parser
 
@@ -540,7 +545,10 @@ def get_file_content(url: str, session: PipSession) -> Tuple[str, str]:
     # Pip has special support for file:// URLs (LocalFSAdapter).
     if scheme in ["http", "https", "file"]:
         resp = session.get(url)
-        raise_for_status(resp)
+        try:
+            raise_for_status(resp)
+        except Exception as exc:
+            raise RequirementsFileFetchError(url, exc, is_url=True)
         return resp.url, resp.text
 
     # Assume this is a bare path.
@@ -548,5 +556,5 @@ def get_file_content(url: str, session: PipSession) -> Tuple[str, str]:
         with open(url, "rb") as f:
             content = auto_decode(f.read())
     except OSError as exc:
-        raise InstallationError(f"Could not open requirements file: {exc}")
+        raise RequirementsFileFetchError(url, exc, is_url=False)
     return url, content
