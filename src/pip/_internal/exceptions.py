@@ -9,6 +9,7 @@ import configparser
 import contextlib
 import locale
 import logging
+import os
 import pathlib
 import re
 import sys
@@ -726,3 +727,62 @@ class ExternallyManagedEnvironment(DiagnosticPipError):
             exc_info = logger.isEnabledFor(VERBOSE)
             logger.warning("Failed to read %s", config, exc_info=exc_info)
         return cls(None)
+
+
+class InvalidRequirement(DiagnosticPipError):
+    reference = "invalid-requirement"
+
+    def __init__(self, req: str, *, line_source: Optional[str] = None) -> None:
+        from pip._vendor.packaging.specifiers import Specifier
+
+        note = None
+        hint = None
+
+        operators = Specifier._operators.keys()
+        if "=" in req and not any(op in req for op in operators):
+            hint = "'=' is not a valid operator. Did you mean '==' ?"
+        elif os.path.sep in req:
+            if os.path.exists(req):
+                if self.is_requirement_a_valid_req_file(req):
+                    hint = (
+                        "It is a valid path which appears to be a requirements file.\n"
+                        "If that is the case, use the '-r' flag to install the "
+                        "packages specified within it."
+                    )
+                else:
+                    note = (
+                        "It is a valid path, but it is not a valid requirements file "
+                        "or an installable project directory."
+                    )
+            else:
+                hint = (
+                    "It appears to be a path, but does not exist. "
+                    "Was the right path given?"
+                )
+
+        message: Union[str, Text]
+        if line_source:
+            message = Text(f"{line_source.capitalize()} is invalid: ")
+            message = message.append(f"'{req}'", "green")
+            super().__init__(
+                message=message, context=None, note_stmt=note, hint_stmt=hint
+            )
+        else:
+            message = f"'{escape(req)}' is not a valid requirement."
+            super().__init__(
+                message=message, context=None, note_stmt=note, hint_stmt=hint
+            )
+
+    @staticmethod
+    def is_requirement_a_valid_req_file(req: str) -> bool:
+        from pip._vendor import packaging
+
+        from pip._internal.req.constructors import check_first_requirement_in_file
+
+        try:
+            check_first_requirement_in_file(req)
+        except packaging.requirements.InvalidRequirement:
+            logger.debug("Cannot parse '%s' as requirements file", req)
+            return False
+
+        return True

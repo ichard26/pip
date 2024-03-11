@@ -16,8 +16,8 @@ from typing import Collection, Dict, List, Optional, Set, Tuple, Union
 
 from pip._vendor.packaging.markers import Marker
 from pip._vendor.packaging.requirements import InvalidRequirement, Requirement
-from pip._vendor.packaging.specifiers import Specifier
 
+from pip._internal import exceptions
 from pip._internal.exceptions import InstallationError
 from pip._internal.models.index import PyPI, TestPyPI
 from pip._internal.models.link import Link
@@ -37,7 +37,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-operators = Specifier._operators.keys()
 
 
 def _strip_extras(path: str) -> Tuple[str, Optional[str]]:
@@ -164,31 +163,6 @@ def check_first_requirement_in_file(filename: str) -> None:
                 line = line[:-2].strip() + next(lines, "")
             Requirement(line)
             return
-
-
-def deduce_helpful_msg(req: str) -> str:
-    """Returns helpful msg in case requirements file does not exist,
-    or cannot be parsed.
-
-    :params req: Requirements file path
-    """
-    if not os.path.exists(req):
-        return f" File '{req}' does not exist."
-    msg = " The path does exist. "
-    # Try to parse and check if it is a requirements file.
-    try:
-        check_first_requirement_in_file(req)
-    except InvalidRequirement:
-        logger.debug("Cannot parse '%s' as requirements file", req)
-    else:
-        msg += (
-            f"The argument you provided "
-            f"({req}) appears to be a"
-            f" requirements file. If that is the"
-            f" case, use the '-r' flag to install"
-            f" the packages specified within it."
-        )
-    return msg
 
 
 class RequirementParts:
@@ -357,28 +331,11 @@ def parse_req_from_line(name: str, line_source: Optional[str]) -> RequirementPar
 
     extras = convert_extras(extras_as_string)
 
-    def with_source(text: str) -> str:
-        if not line_source:
-            return text
-        return f"{text} (from {line_source})"
-
     def _parse_req_string(req_as_string: str) -> Requirement:
         try:
             req = get_requirement(req_as_string)
         except InvalidRequirement:
-            if os.path.sep in req_as_string:
-                add_msg = "It looks like a path."
-                add_msg += deduce_helpful_msg(req_as_string)
-            elif "=" in req_as_string and not any(
-                op in req_as_string for op in operators
-            ):
-                add_msg = "= is not a valid operator. Did you mean == ?"
-            else:
-                add_msg = ""
-            msg = with_source(f"Invalid requirement: {req_as_string!r}")
-            if add_msg:
-                msg += f"\nHint: {add_msg}"
-            raise InstallationError(msg)
+            raise exceptions.InvalidRequirement(req_as_string, line_source=line_source)
         else:
             # Deprecate extras after specifiers: "name>=1.0[extras]"
             # This currently works by accident because _strip_extras() parses
