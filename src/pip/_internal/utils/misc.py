@@ -12,7 +12,6 @@ import urllib.parse
 from collections.abc import Generator, Iterable, Iterator
 from dataclasses import dataclass
 from functools import partial
-from io import StringIO
 from itertools import filterfalse, tee, zip_longest
 from pathlib import Path
 from types import FunctionType, TracebackType
@@ -21,7 +20,6 @@ from typing import (
     BinaryIO,
     Callable,
     Optional,
-    TextIO,
     TypeVar,
     Union,
     cast,
@@ -366,22 +364,6 @@ def is_local(path: str) -> bool:
 
 def write_output(msg: Any, *args: Any) -> None:
     logger.info(msg, *args)
-
-
-class StreamWrapper(StringIO):
-    orig_stream: TextIO
-
-    @classmethod
-    def from_stream(cls, orig_stream: TextIO) -> "StreamWrapper":
-        ret = cls()
-        ret.orig_stream = orig_stream
-        return ret
-
-    # compileall.compile_dir() needs stdout.encoding to print to stdout
-    # type ignore is because TextIOBase.encoding is writeable
-    @property
-    def encoding(self) -> str:  # type: ignore
-        return self.orig_stream.encoding
 
 
 # Simulates an enum
