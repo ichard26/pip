@@ -49,6 +49,9 @@ def install_given_reqs(
 
     (to be called after having downloaded and unpacked the packages)
     """
+    import time
+
+    t0 = time.perf_counter()
     to_install = collections.OrderedDict(_validate_requirements(requirements))
 
     if to_install:
@@ -59,9 +62,9 @@ def install_given_reqs(
 
     installed = []
 
-    show_progress = logger.getEffectiveLevel() <= logging.INFO
+    show_progress = logger.isEnabledFor(logging.INFO) and len(to_install) > 1
 
-    items = iter(to_install.items())
+    items = iter(to_install.values())
     if show_progress:
         renderer = get_install_progress_renderer(
             bar_type=progress_bar, total=len(to_install)
@@ -69,9 +72,9 @@ def install_given_reqs(
         items = renderer(items)
 
     with indent_log():
-        for req_name, requirement in items:
+        for requirement in items:
             if requirement.should_reinstall:
-                logger.info("Attempting uninstall: %s", req_name)
+                logger.info("Attempting uninstall: %s", requirement.name)
                 with indent_log():
                     uninstalled_pathset = requirement.uninstall(auto_confirm=True)
             else:
@@ -96,6 +99,8 @@ def install_given_reqs(
                 if uninstalled_pathset and requirement.install_succeeded:
                     uninstalled_pathset.commit()
 
-            installed.append(InstallationResult(req_name))
+            installed.append(InstallationResult(requirement.name))
 
+    t1 = time.perf_counter()
+    logger.info(f"{t1 - t0:.3f}ms")
     return installed
