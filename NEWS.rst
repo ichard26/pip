@@ -9,6 +9,14 @@
 
 .. towncrier release notes start
 
+24.3 (2024-00-00)
+=================
+
+Deprecations and Removals
+-------------------------
+
+- 100% less bananas.
+
 24.2 (2024-07-28)
 =================
 
