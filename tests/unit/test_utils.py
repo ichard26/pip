@@ -9,9 +9,10 @@ import shutil
 import stat
 import sys
 import time
+from collections.abc import Iterator
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Iterator, List, NoReturn, Optional, Tuple, Type
+from typing import Any, Callable, NoReturn, Optional
 from unittest.mock import Mock, patch
 
 import pytest
@@ -487,7 +488,7 @@ class TestEncoding:
         assert "".encode(encoding).decode(encoding) == ""
 
 
-def raises(error: Type[Exception]) -> NoReturn:
+def raises(error: type[Exception]) -> NoReturn:
     raise error
 
 
@@ -552,7 +553,7 @@ class TestGlibc:
     ],
 )
 def test_normalize_version_info(
-    version_info: Tuple[int, ...], expected: Tuple[int, int, int]
+    version_info: tuple[int, ...], expected: tuple[int, int, int]
 ) -> None:
     actual = normalize_version_info(version_info)
     assert actual == expected
@@ -592,7 +593,7 @@ class TestGetProg:
     ],
 )
 def test_build_netloc(
-    host_port: Tuple[str, Optional[int]], expected_netloc: str
+    host_port: tuple[str, Optional[int]], expected_netloc: str
 ) -> None:
     assert build_netloc(*host_port) == expected_netloc
 
@@ -621,7 +622,7 @@ def test_build_netloc(
 def test_build_url_from_netloc_and_parse_netloc(
     netloc: str,
     expected_url: str,
-    expected_host_port: Tuple[str, Optional[int]],
+    expected_host_port: tuple[str, Optional[int]],
 ) -> None:
     assert build_url_from_netloc(netloc) == expected_url
     assert parse_netloc(netloc) == expected_host_port
@@ -647,7 +648,7 @@ def test_build_url_from_netloc_and_parse_netloc(
     ],
 )
 def test_split_auth_from_netloc(
-    netloc: str, expected: Tuple[str, Tuple[Optional[str], Optional[str]]]
+    netloc: str, expected: tuple[str, tuple[Optional[str], Optional[str]]]
 ) -> None:
     actual = split_auth_from_netloc(netloc)
     assert actual == expected
@@ -694,7 +695,7 @@ def test_split_auth_from_netloc(
     ],
 )
 def test_split_auth_netloc_from_url(
-    url: str, expected: Tuple[str, str, Tuple[Optional[str], Optional[str]]]
+    url: str, expected: tuple[str, str, tuple[Optional[str], Optional[str]]]
 ) -> None:
     actual = split_auth_netloc_from_url(url)
     assert actual == expected
@@ -996,7 +997,7 @@ def test_make_setuptools_shim_args() -> None:
 
 @pytest.mark.parametrize("global_options", [None, [], ["--some", "--option"]])
 def test_make_setuptools_shim_args__global_options(
-    global_options: Optional[List[str]],
+    global_options: Optional[list[str]],
 ) -> None:
     args = make_setuptools_shim_args(
         "/dir/path/setup.py",
@@ -1085,5 +1086,5 @@ def test_format_size(size: int, expected: str) -> None:
         ),
     ],
 )
-def test_tabulate(rows: List[Tuple[str]], table: List[str], sizes: List[int]) -> None:
+def test_tabulate(rows: list[tuple[str]], table: list[str], sizes: list[int]) -> None:
     assert tabulate(rows) == (table, sizes)

@@ -8,18 +8,14 @@ import os
 import re
 import shlex
 import urllib.parse
+from collections.abc import Generator, Iterable
 from optparse import Values
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    Generator,
-    Iterable,
-    List,
     NoReturn,
     Optional,
-    Tuple,
 )
 
 from pip._internal.cli import cmdoptions
@@ -33,9 +29,9 @@ if TYPE_CHECKING:
 
 __all__ = ["parse_requirements"]
 
-ReqFileLines = Iterable[Tuple[int, str]]
+ReqFileLines = Iterable[tuple[int, str]]
 
-LineParser = Callable[[str], Tuple[str, Values]]
+LineParser = Callable[[str], tuple[str, Values]]
 
 SCHEME_RE = re.compile(r"^(http|https|file):", re.I)
 COMMENT_RE = re.compile(r"(^|\s+)#.*$")
@@ -46,7 +42,7 @@ COMMENT_RE = re.compile(r"(^|\s+)#.*$")
 # 2013 Edition.
 ENV_VAR_RE = re.compile(r"(?P<var>\$\{(?P<name>[A-Z0-9_]+)\})")
 
-SUPPORTED_OPTIONS: List[Callable[..., optparse.Option]] = [
+SUPPORTED_OPTIONS: list[Callable[..., optparse.Option]] = [
     cmdoptions.index_url,
     cmdoptions.extra_index_url,
     cmdoptions.no_index,
@@ -64,13 +60,13 @@ SUPPORTED_OPTIONS: List[Callable[..., optparse.Option]] = [
 ]
 
 # options to be passed to requirements
-SUPPORTED_OPTIONS_REQ: List[Callable[..., optparse.Option]] = [
+SUPPORTED_OPTIONS_REQ: list[Callable[..., optparse.Option]] = [
     cmdoptions.global_options,
     cmdoptions.hash,
     cmdoptions.config_settings,
 ]
 
-SUPPORTED_OPTIONS_EDITABLE_REQ: List[Callable[..., optparse.Option]] = [
+SUPPORTED_OPTIONS_EDITABLE_REQ: list[Callable[..., optparse.Option]] = [
     cmdoptions.config_settings,
 ]
 
@@ -91,7 +87,7 @@ class ParsedRequirement:
         is_editable: bool,
         comes_from: str,
         constraint: bool,
-        options: Optional[Dict[str, Any]] = None,
+        options: Optional[dict[str, Any]] = None,
         line_source: Optional[str] = None,
     ) -> None:
         self.requirement = requirement
@@ -337,7 +333,7 @@ class RequirementsFileParser:
         self,
         filename: str,
         constraint: bool,
-        parsed_files_stack: List[Dict[str, Optional[str]]],
+        parsed_files_stack: list[dict[str, Optional[str]]],
     ) -> Generator[ParsedLine, None, None]:
         for line in self._parse_file(filename, constraint):
             if not line.is_requirement and (
@@ -410,7 +406,7 @@ class RequirementsFileParser:
 
 
 def get_line_parser(finder: Optional["PackageFinder"]) -> LineParser:
-    def parse_line(line: str) -> Tuple[str, Values]:
+    def parse_line(line: str) -> tuple[str, Values]:
         # Build new parser for each line since it accumulates appendable
         # options.
         parser = build_parser()
@@ -433,7 +429,7 @@ def get_line_parser(finder: Optional["PackageFinder"]) -> LineParser:
     return parse_line
 
 
-def break_args_options(line: str) -> Tuple[str, str]:
+def break_args_options(line: str) -> tuple[str, str]:
     """Break up the line into an args and options string.  We only want to shlex
     (and then optparse) the options, not the args.  args can contain markers
     which are corrupted by shlex.
@@ -483,7 +479,7 @@ def join_lines(lines_enum: ReqFileLines) -> ReqFileLines:
     comments).  The joined line takes on the index of the first line.
     """
     primary_line_number = None
-    new_line: List[str] = []
+    new_line: list[str] = []
     for line_number, line in lines_enum:
         if not line.endswith("\\") or COMMENT_RE.match(line):
             if COMMENT_RE.match(line):
@@ -547,7 +543,7 @@ def expand_env_variables(lines_enum: ReqFileLines) -> ReqFileLines:
         yield line_number, line
 
 
-def get_file_content(url: str, session: "PipSession") -> Tuple[str, str]:
+def get_file_content(url: str, session: "PipSession") -> tuple[str, str]:
     """Gets the content of a file; it may be a filename, file: URL, or
     http: URL.  Returns (location, content).  Content is unicode.
     Respects # -*- coding: declarations on the retrieved files.
