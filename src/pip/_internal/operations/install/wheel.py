@@ -19,7 +19,6 @@ from io import StringIO
 from itertools import chain, filterfalse, starmap
 from typing import (
     IO,
-    TYPE_CHECKING,
     Any,
     BinaryIO,
     Callable,
@@ -54,15 +53,14 @@ from pip._internal.utils.unpacking import (
 )
 from pip._internal.utils.wheel import parse_wheel
 
-if TYPE_CHECKING:
 
-    class File(Protocol):
-        src_record_path: "RecordPath"
-        dest_path: str
-        changed: bool
+class File(Protocol):
+    src_record_path: "RecordPath"
+    dest_path: str
+    changed: bool
 
-        def save(self) -> None:
-            pass
+    def save(self) -> None:
+        pass
 
 
 logger = logging.getLogger(__name__)
