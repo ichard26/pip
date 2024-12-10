@@ -389,7 +389,7 @@ def flags(
     return flags
 
 
-def test_prompt_for_keyring_if_needed(
+def prompt_for_keyring_if_needed(
     data: TestData,
     cert_factory: CertFactory,
     auth_needed: bool,
