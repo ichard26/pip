@@ -18,7 +18,11 @@ from pip._vendor.packaging.version import parse as parse_version
 from pip._vendor.pyproject_hooks import BuildBackendHookCaller
 
 from pip._internal.build_env import BuildEnvironment, NoOpBuildEnvironment
-from pip._internal.exceptions import InstallationError, PreviousBuildDirError
+from pip._internal.exceptions import (
+    InstallationError,
+    LegacyEditableInstallError,
+    PreviousBuildDirError,
+)
 from pip._internal.locations import get_scheme
 from pip._internal.metadata import (
     BaseDistribution,
@@ -33,9 +37,6 @@ from pip._internal.operations.build.metadata import generate_metadata
 from pip._internal.operations.build.metadata_editable import generate_editable_metadata
 from pip._internal.operations.build.metadata_legacy import (
     generate_metadata as generate_metadata_legacy,
-)
-from pip._internal.operations.install.editable_legacy import (
-    install_editable as install_editable_legacy,
 )
 from pip._internal.operations.install.wheel import install_wheel
 from pip._internal.pyproject import load_pyproject_toml, make_pyproject_path
@@ -190,6 +191,15 @@ class InstallRequirement:
                     self,
                 )
             self.use_pep517 = True
+        # Only PEP 660 based editable installations are supported, so PEP 517
+        # processing must be enforced.
+        if self.editable and self.permit_editable_wheels:
+            if self.use_pep517 is False:
+                logger.warning(
+                    "--no-use-pep517 ignored for %s because editable mode is enabled",
+                    self,
+                )
+            self.use_pep517 = True
 
         # This requirement needs more preparation before it can be built
         self.needs_more_preparation = False
@@ -247,8 +257,6 @@ class InstallRequirement:
 
     @functools.cached_property
     def supports_pyproject_editable(self) -> bool:
-        if not self.use_pep517:
-            return False
         assert self.pep517_backend
         with self.build_env:
             runner = runner_with_spinner_message(
@@ -490,13 +498,6 @@ class InstallRequirement:
         return setup_py
 
     @property
-    def setup_cfg_path(self) -> str:
-        assert self.source_dir, f"No source dir for {self}"
-        setup_cfg = os.path.join(self.unpacked_source_directory, "setup.cfg")
-
-        return setup_cfg
-
-    @property
     def pyproject_toml_path(self) -> str:
         assert self.source_dir, f"No source dir for {self}"
         return make_pyproject_path(self.unpacked_source_directory)
@@ -529,24 +530,19 @@ class InstallRequirement:
             backend_path=backend_path,
         )
 
-    def isolated_editable_sanity_check(self) -> None:
-        """Check that an editable requirement if valid for use with PEP 517/518.
+    def editable_sanity_check(self) -> None:
+        """Check that an editable requirement is valid for use with PEP 517/518.
 
-        This verifies that an editable that has a pyproject.toml either supports PEP 660
-        or as a setup.py or a setup.cfg
+        This verifies that the editable's declared build backend supports PEP 660.
         """
-        if (
-            self.editable
-            and self.use_pep517
-            and not self.supports_pyproject_editable
-            and not os.path.isfile(self.setup_py_path)
-            and not os.path.isfile(self.setup_cfg_path)
-        ):
+        if not self.editable or not self.permit_editable_wheels:
+            return
+
+        assert self.use_pep517 is True, "legacy editables are no longer unsupported"
+        if not self.supports_pyproject_editable:
             raise InstallationError(
-                f"Project {self} has a 'pyproject.toml' and its build "
-                f"backend is missing the 'build_editable' hook. Since it does not "
-                f"have a 'setup.py' nor a 'setup.cfg', "
-                f"it cannot be installed in editable mode. "
+                f"Project {self} has a 'pyproject.toml', but its build "
+                f"backend is missing the 'build_editable' hook. It cannot be installed in editable mode. "
                 f"Consider using a build backend that supports PEP 660."
             )
 
@@ -825,41 +821,7 @@ class InstallRequirement:
         )
 
         if self.editable and not self.is_wheel:
-            deprecated(
-                reason=(
-                    f"Legacy editable install of {self} (setup.py develop) "
-                    "is deprecated."
-                ),
-                replacement=(
-                    "to add a pyproject.toml or enable --use-pep517, "
-                    "and use setuptools >= 64. "
-                    "If the resulting installation is not behaving as expected, "
-                    "try using --config-settings editable_mode=compat. "
-                    "Please consult the setuptools documentation for more information"
-                ),
-                gone_in="25.0",
-                issue=11457,
-            )
-            if self.config_settings:
-                logger.warning(
-                    "--config-settings ignored for legacy editable install of %s. "
-                    "Consider upgrading to a version of setuptools "
-                    "that supports PEP 660 (>= 64).",
-                    self,
-                )
-            install_editable_legacy(
-                global_options=global_options if global_options is not None else [],
-                prefix=prefix,
-                home=home,
-                use_user_site=use_user_site,
-                name=self.req.name,
-                setup_py_path=self.setup_py_path,
-                isolated=self.isolated,
-                build_env=self.build_env,
-                unpacked_source_directory=self.unpacked_source_directory,
-            )
-            self.install_succeeded = True
-            return
+            raise RuntimeError("this should be an impossible state?", str(req))
 
         assert self.is_wheel
         assert self.local_file_path

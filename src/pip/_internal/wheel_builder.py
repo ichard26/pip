@@ -68,10 +68,6 @@ def _should_build(
     if not req.source_dir:
         return False
 
-    if req.editable:
-        # we only build PEP 660 editable requirements
-        return req.supports_pyproject_editable
-
     return True
 
 

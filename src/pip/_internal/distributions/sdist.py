@@ -44,14 +44,14 @@ class SourceDistribution(AbstractDistribution):
             # Setup an isolated environment and install the build backend static
             # requirements in it.
             self._prepare_build_backend(finder)
-            # Check that if the requirement is editable, it either supports PEP 660 or
-            # has a setup.py or a setup.cfg. This cannot be done earlier because we need
-            # to setup the build backend to verify it supports build_editable, nor can
+            # If the requirement is editable, check that it supports PEP 660.
+            # This cannot be done earlier because we need to setup the build
+            # backend to verify it supports build_editable, nor can
             # it be done later, because we want to avoid installing build requirements
             # needlessly. Doing it here also works around setuptools generating
             # UNKNOWN.egg-info when running get_requires_for_build_wheel on a directory
             # without setup.py nor setup.cfg.
-            self.req.isolated_editable_sanity_check()
+            self.req.editable_sanity_check()
             # Install the dynamic build requirements.
             self._install_build_reqs(finder)
         # Check if the current environment provides build dependencies
@@ -66,6 +66,7 @@ class SourceDistribution(AbstractDistribution):
                 self._raise_conflicts("the backend dependencies", conflicting)
             if missing:
                 self._raise_missing_reqs(missing)
+        self.req.editable_sanity_check()
         self.req.prepare_metadata()
 
     def _prepare_build_backend(self, finder: "PackageFinder") -> None:

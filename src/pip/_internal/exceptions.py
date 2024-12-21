@@ -807,3 +807,14 @@ class InvalidInstalledPackage(DiagnosticPipError):
             ),
             hint_stmt="To proceed this package must be uninstalled.",
         )
+
+
+class LegacyEditableInstallError(DiagnosticPipError):
+    reference = "legacy-editable-install"
+
+    def __init__(self, req: "InstallRequirement") -> None:
+        super().__init__(
+            message=f"Cannot install {req} in editable mode",
+            context="The project does not support the modern editable mechanism",
+            hint_stmt="Upgrade your project to"
+        )
