@@ -39,6 +39,8 @@ def test_show_with_files_not_found(script: PipTestEnvironment, data: TestData) -
     script.pip("install", "-e", editable)
     result = script.pip("show", "-f", "SetupPyUTF8")
     lines = result.stdout.splitlines()
+    print("\n".join(lines))
+    assert False
     assert len(lines) == 13
     assert "Name: SetupPyUTF8" in lines
     assert "Version: 0.0.0" in lines

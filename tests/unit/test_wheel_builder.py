@@ -55,15 +55,15 @@ class ReqMock:
         (ReqMock(constraint=True), False),
         # We don't build reqs that are already wheels.
         (ReqMock(is_wheel=True), False),
-        # We build editables if the backend supports PEP 660.
-        (ReqMock(editable=True, use_pep517=False), False),
+        # We always build editables as only PEP 660 processing is supported.
+        (ReqMock(editable=True, use_pep517=False), True),
         (
             ReqMock(editable=True, use_pep517=True, supports_pyproject_editable=True),
             True,
         ),
         (
             ReqMock(editable=True, use_pep517=True, supports_pyproject_editable=False),
-            False,
+            True,
         ),
         # We don't build if there is no source dir (whatever that means!).
         (ReqMock(source_dir=None), False),
