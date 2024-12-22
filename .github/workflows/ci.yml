@@ -190,12 +190,12 @@ jobs:
           python-version: ${{ matrix.python }}
           allow-prereleases: true
 
-      - name: Create a Dev Drive
-        run: |
-          ./tools/ci/devdrive.ps1 -Drive R -Size 5GB
-          mkdir R:\Temp
-          echo "TEMP=R:\\Temp" >> $env:GITHUB_ENV
+      - uses: samypr100/setup-dev-drive@v3
+        with:
+          drive-size: 5GB
+          env-mapping: TEMP, {{ DEV_DRIVE }}/temp
 
+      - run: mkdir E:\Temp
       - run: pip install nox
 
       # Main check
