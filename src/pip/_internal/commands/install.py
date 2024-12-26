@@ -346,6 +346,8 @@ class InstallCommand(RequirementCommand):
             globally_managed=True,
         )
 
+        global OPTIONS
+        OPTIONS = options
         try:
             reqs = self.get_requirements(args, options, finder, session)
             check_legacy_setup_py_options(options, reqs)
