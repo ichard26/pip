@@ -519,5 +519,6 @@ class PipSession(requests.Session):
         # Allow setting a default proxies on a session
         kwargs.setdefault("proxies", self.proxies)
 
+        print(f"[session] {method} {url}")
         # Dispatch the actual request
         return super().request(method, url, *args, **kwargs)

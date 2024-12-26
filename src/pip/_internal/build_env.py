@@ -79,8 +79,9 @@ def _get_system_sitepackages() -> Set[str]:
 class BuildEnvironment:
     """Creates and manages an isolated environment to install build deps"""
 
-    def __init__(self) -> None:
+    def __init__(self, finder: "PackageFinder") -> None:
         temp_dir = TempDirectory(kind=tempdir_kinds.BUILD_ENV, globally_managed=True)
+        self.finder = finder
 
         self._prefixes = OrderedDict(
             (name, _Prefix(os.path.join(temp_dir.path, name)))
@@ -213,13 +214,123 @@ class BuildEnvironment:
         prefix.setup = True
         if not requirements:
             return
-        self._install_requirements(
-            get_runnable_pip(),
-            finder,
-            requirements,
-            prefix,
-            kind=kind,
+        # self._install_requirements(
+        #     get_runnable_pip(),
+        #     finder,
+        #     requirements,
+        #     prefix,
+        #     kind=kind,
+        # )
+        self._install_in_process(requirements, prefix)
+
+    def _install_in_process(self, requirements: Iterable[str], prefix: _Prefix) -> None:
+        upgrade_strategy = "to-satisfy-only"
+
+        # cmdoptions.check_dist_restriction(options, check_target=True)
+
+        from pip._internal.commands import install
+        from pip._internal.cli.req_command import RequirementCommand
+        from pip._internal.wheel_builder import build, should_build_for_install_command
+        from pip._internal.operations.build.build_tracker import get_build_tracker
+        from pip._internal.cache import WheelCache
+        from pip._internal.req import install_given_reqs
+
+        options = install.OPTIONS
+        finder = self.finder
+        session = finder._link_collector.session
+
+        # target_python = make_target_python(options)
+        # build_tracker = self.enter_context(get_build_tracker())
+        build_tracker = get_build_tracker()
+
+        directory = TempDirectory(
+            delete=not options.no_clean,
+            kind="install",
+            globally_managed=True,
         )
+
+        reqs = RequirementCommand.get_requirements(object(), requirements, options, finder, session)
+        # reqs = [get_requirement(r) for r in requirements]
+
+        wheel_cache = WheelCache(options.cache_dir)
+
+        # Only when installing is it permitted to use PEP 660.
+        # In other circumstances (pip wheel, pip download) we generate
+        # regular (i.e. non editable) metadata and wheels.
+        for req in reqs:
+            req.permit_editable_wheels = True
+
+        preparer = RequirementCommand.make_requirement_preparer(
+            temp_build_dir=directory,
+            options=options,
+            build_tracker=build_tracker,
+            session=session,
+            finder=finder,
+            use_user_site=False,
+            verbosity=1,
+        )
+        resolver = RequirementCommand.make_resolver(
+            preparer=preparer,
+            finder=finder,
+            options=options,
+            wheel_cache=wheel_cache,
+            use_user_site=False,
+            ignore_installed=True,
+            ignore_requires_python=options.ignore_requires_python,
+            force_reinstall=False,
+            upgrade_strategy=upgrade_strategy,
+            use_pep517=options.use_pep517,
+            py_version_info=(3, 12, 0),
+        )
+
+        requirement_set = resolver.resolve(
+            reqs, check_supported_wheels=True
+        )
+
+        reqs_to_build = [
+            r
+            for r in requirement_set.requirements.values()
+            if should_build_for_install_command(r)
+        ]
+
+        _, build_failures = build(
+            reqs_to_build,
+            wheel_cache=wheel_cache,
+            verify=True,
+            build_options=[],
+            global_options=[],
+        )
+
+        if build_failures:
+            raise InstallationError(
+                "Failed to build installable wheels for some "
+                "pyproject.toml based projects ({})".format(
+                    ", ".join(r.name for r in build_failures)  # type: ignore
+                )
+            )
+
+        to_install = resolver.get_installation_order(requirement_set)
+
+        # Check for conflicts in the package set we're installing.
+        # conflicts: Optional[ConflictDetails] = None
+        # should_warn_about_conflicts = (
+        #     not options.ignore_dependencies and options.warn_about_conflicts
+        # )
+        # if should_warn_about_conflicts:
+        #     conflicts = self._determine_conflicts(to_install)
+
+        installed = install_given_reqs(
+            to_install,
+            [],
+            root=None,
+            home=None,
+            prefix=prefix.path,
+            warn_script_location=False,
+            use_user_site=False,
+            pycompile=False,
+        )
+        print(f"[in-process] installed {', '.join(requirements)}")
+
 
     @staticmethod
     def _install_requirements(

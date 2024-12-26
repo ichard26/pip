@@ -74,7 +74,7 @@ class SourceDistribution(AbstractDistribution):
         pyproject_requires = self.req.pyproject_requires
         assert pyproject_requires is not None
 
-        self.req.build_env = BuildEnvironment()
+        self.req.build_env = BuildEnvironment(finder)
         self.req.build_env.install_requirements(
             finder, pyproject_requires, "overlay", kind="build dependencies"
         )
