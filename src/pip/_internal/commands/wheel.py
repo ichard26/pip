@@ -144,6 +144,8 @@ class WheelCommand(RequirementCommand):
 
         self.trace_basic_info(finder)
 
+        from pip._internal.commands import install
+        install.OPTIONS = options
         requirement_set = resolver.resolve(reqs, check_supported_wheels=True)
 
         reqs_to_build: List[InstallRequirement] = []
