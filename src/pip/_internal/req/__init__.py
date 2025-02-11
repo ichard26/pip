@@ -102,5 +102,5 @@ def install_given_reqs(
             installed.append(InstallationResult(requirement.name))
 
     t1 = time.perf_counter()
-    logger.info(f"{t1 - t0:.3f}ms")
+    # logger.info(f"{t1 - t0:.3f}s")
     return installed
