@@ -75,25 +75,27 @@ def _rich_install_progress_bar(
 ) -> Iterator[InstallRequirement]:
     columns = (
         TextColumn("{task.fields[indent]}"),
-        # TextColumn("Installing packages"),
         BarColumn(),
         MofNCompleteColumn(),
-        # TimeElapsedColumn(),
-        TextColumn("{task.fields[extra]}"),
+        TextColumn("{task.description}"),
     )
+    console = get_console()
 
-    progress = Progress(
-        *columns, refresh_per_second=6, console=get_console(), transient=True
-    )
-    with progress:
-        task_id = progress.add_task(
-            "install", total=total, indent=" " * get_indentation(), extra=""
+    import time
+
+    start_time = time.monotonic()
+    bar = Progress(*columns, refresh_per_second=6, console=console, transient=True)
+    with bar:
+        task = bar.add_task(
+            "", total=total, indent=" " * get_indentation(), visible=False
         )
         for req in iterable:
-            progress.update(task_id, extra=rf"\[{req.name}]")
+            elapsed = time.monotonic() - start_time
+            bar.update(task, description=rf"\[{req.name}]", visible=True)
             yield req
-            progress.advance(task_id)
-        progress.update(task_id, extra="")
+            bar.advance(task)
+        bar.update(task, desc="", visible=True)
+    print(f"{time.monotonic() - start_time:.3f}")
 
 
 T = TypeVar("T", bound=Sized)
