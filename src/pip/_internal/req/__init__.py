@@ -1,5 +1,6 @@
 import collections
 import logging
+import os
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple
@@ -52,7 +53,7 @@ def install_given_reqs(
     (to be called after having downloaded and unpacked the packages)
     """
     # compiler = SerialCompiler() if pycompile else None
-    compiler = ParallelCompiler(workers=3) if pycompile else None
+    compiler = ParallelCompiler(workers=min(4, os.cpu_count())) if pycompile else None
 
     to_install = collections.OrderedDict(_validate_requirements(requirements))
 
@@ -73,6 +74,8 @@ def install_given_reqs(
         )
         items = renderer(items)
 
+    import time
+    t0 = time.perf_counter()
     with indent_log(), (compiler or nullcontext()):
         for requirement in items:
             req_name = requirement.name
@@ -85,6 +88,7 @@ def install_given_reqs(
                 uninstalled_pathset = None
 
             try:
+                t1 = time.perf_counter()
                 requirement.install(
                     global_options,
                     root=root,
@@ -102,7 +106,11 @@ def install_given_reqs(
             else:
                 if uninstalled_pathset and requirement.install_succeeded:
                     uninstalled_pathset.commit()
+                elapsed = time.perf_counter() - t1
+                logger.info(rf"{req_name}: {elapsed:.3f}s")
 
             installed.append(InstallationResult(req_name))
 
+    elapsed = time.perf_counter() - t0
+    print(f"install total: {elapsed:.3f}s")
     return installed
