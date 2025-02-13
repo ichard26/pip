@@ -48,7 +48,6 @@ class ParallelCompiler(BytecodeCompiler):
         jobs = [(p,) for p in paths]
 
         for (path, is_success) in self.pool.starmap(self._compile_single, jobs):
-            is_success = compileall.compile_file(path, force=True, quiet=True)
             if is_success:
                 pyc_paths.append(importlib.util.cache_from_source(path))
 
