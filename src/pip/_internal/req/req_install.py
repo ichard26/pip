@@ -40,6 +40,7 @@ from pip._internal.operations.install.editable_legacy import (
 from pip._internal.operations.install.wheel import install_wheel
 from pip._internal.pyproject import load_pyproject_toml, make_pyproject_path
 from pip._internal.req.req_uninstall import UninstallPathSet
+from pip._internal.utils.compile import BytecodeCompiler
 from pip._internal.utils.deprecation import deprecated
 from pip._internal.utils.hashes import Hashes
 from pip._internal.utils.misc import (
@@ -812,7 +813,7 @@ class InstallRequirement:
         prefix: Optional[str] = None,
         warn_script_location: bool = True,
         use_user_site: bool = False,
-        pycompile: bool = True,
+        compiler: Optional[BytecodeCompiler] = None,
     ) -> None:
         assert self.req is not None
         scheme = get_scheme(
@@ -869,7 +870,7 @@ class InstallRequirement:
             self.local_file_path,
             scheme=scheme,
             req_description=str(self.req),
-            pycompile=pycompile,
+            compiler=compiler,
             warn_script_location=warn_script_location,
             direct_url=self.download_info if self.is_direct else None,
             requested=self.user_supplied,

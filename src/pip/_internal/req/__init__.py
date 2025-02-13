@@ -1,9 +1,11 @@
 import collections
 import logging
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple
 
 from pip._internal.cli.progress_bars import get_install_progress_renderer
+from pip._internal.utils.compile import SerialCompiler, ParallelCompiler
 from pip._internal.utils.logging import indent_log
 
 from .req_file import parse_requirements
@@ -49,6 +51,9 @@ def install_given_reqs(
 
     (to be called after having downloaded and unpacked the packages)
     """
+    # compiler = SerialCompiler() if pycompile else None
+    compiler = ParallelCompiler(workers=3) if pycompile else None
+
     to_install = collections.OrderedDict(_validate_requirements(requirements))
 
     if to_install:
@@ -68,7 +73,7 @@ def install_given_reqs(
         )
         items = renderer(items)
 
-    with indent_log():
+    with indent_log(), (compiler or nullcontext()):
         for requirement in items:
             req_name = requirement.name
             assert req_name is not None
@@ -87,7 +92,7 @@ def install_given_reqs(
                     prefix=prefix,
                     warn_script_location=warn_script_location,
                     use_user_site=use_user_site,
-                    pycompile=pycompile,
+                    compiler=compiler,
                 )
             except Exception:
                 # if install did not succeed, rollback previous uninstall
