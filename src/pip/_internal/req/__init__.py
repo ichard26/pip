@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple
 
 from pip._internal.cli.progress_bars import get_install_progress_renderer
-from pip._internal.utils.compile import SerialCompiler, ParallelCompiler
+from pip._internal.utils.compile import ParallelCompiler, SerialCompiler
 from pip._internal.utils.logging import indent_log
+from pip._internal.utils.misc import strtobool
 
 from .req_file import parse_requirements
 from .req_install import InstallRequirement
@@ -52,8 +53,16 @@ def install_given_reqs(
 
     (to be called after having downloaded and unpacked the packages)
     """
-    # compiler = SerialCompiler() if pycompile else None
-    compiler = ParallelCompiler(workers=min(4, os.cpu_count())) if pycompile else None
+    import time
+
+    t0 = time.perf_counter()
+    compiler = None
+    if pycompile:
+        if strtobool(os.getenv("PIP_SERIAL", "0")):
+            compiler = SerialCompiler()
+        else:
+            workers = os.getenv("PIP_WORKERS") or min(4, os.cpu_count())
+            compiler = ParallelCompiler(workers=int(workers))
 
     to_install = collections.OrderedDict(_validate_requirements(requirements))
 
@@ -74,9 +83,7 @@ def install_given_reqs(
         )
         items = renderer(items)
 
-    import time
-    t0 = time.perf_counter()
-    with indent_log(), (compiler or nullcontext()):
+    with indent_log(), compiler or nullcontext():
         for requirement in items:
             req_name = requirement.name
             assert req_name is not None
@@ -107,10 +114,10 @@ def install_given_reqs(
                 if uninstalled_pathset and requirement.install_succeeded:
                     uninstalled_pathset.commit()
                 elapsed = time.perf_counter() - t1
-                logger.info(rf"{req_name}: {elapsed:.3f}s")
+                # logger.info(rf"{req_name}: {elapsed:.3f}s")
 
             installed.append(InstallationResult(req_name))
 
     elapsed = time.perf_counter() - t0
-    print(f"install total: {elapsed:.3f}s")
+    logger.info(f"[cyan bold]install total: {elapsed:.3f}s", extra={"markup": True})
     return installed
