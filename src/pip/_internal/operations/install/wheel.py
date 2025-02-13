@@ -49,6 +49,7 @@ from pip._internal.metadata import (
 )
 from pip._internal.models.direct_url import DIRECT_URL_METADATA_NAME, DirectUrl
 from pip._internal.models.scheme import SCHEME_KEYS, Scheme
+from pip._internal.utils.compile import BytecodeCompiler
 from pip._internal.utils.filesystem import adjacent_tmp_file, replace
 from pip._internal.utils.misc import StreamWrapper, ensure_dir, hash_file, partition
 from pip._internal.utils.unpacking import (
@@ -423,7 +424,7 @@ def _install_wheel(  # noqa: C901, PLR0915 function is too long
     wheel_zip: ZipFile,
     wheel_path: str,
     scheme: Scheme,
-    pycompile: bool = True,
+    compiler: Optional[BytecodeCompiler],
     warn_script_location: bool = True,
     direct_url: Optional[DirectUrl] = None,
     requested: bool = False,
@@ -607,21 +608,13 @@ def _install_wheel(  # noqa: C901, PLR0915 function is too long
         return importlib.util.cache_from_source(path)
 
     # Compile all of the pyc files for the installed files
-    if pycompile:
-        with contextlib.redirect_stdout(
-            StreamWrapper.from_stream(sys.stdout)
-        ) as stdout:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore")
-                for path in pyc_source_file_paths():
-                    success = compileall.compile_file(path, force=True, quiet=True)
-                    if success:
-                        pyc_path = pyc_output_path(path)
-                        assert os.path.exists(pyc_path)
-                        pyc_record_path = cast(
-                            "RecordPath", pyc_path.replace(os.path.sep, "/")
-                        )
-                        record_installed(pyc_record_path, pyc_path)
+    if compiler is not None:
+        stdout = StreamWrapper.from_stream(sys.stdout)
+        successful = compiler(pyc_source_file_paths(), stdout=stdout)
+        for pyc_path in successful:
+            assert os.path.exists(pyc_path)
+            pyc_record_path = cast("RecordPath", pyc_path.replace(os.path.sep, "/"))
+            record_installed(pyc_record_path, pyc_path)
         logger.debug(stdout.getvalue())
 
     maker = PipScriptMaker(None, scheme.scripts)
@@ -721,7 +714,7 @@ def install_wheel(
     wheel_path: str,
     scheme: Scheme,
     req_description: str,
-    pycompile: bool = True,
+    compiler: Optional[BytecodeCompiler],
     warn_script_location: bool = True,
     direct_url: Optional[DirectUrl] = None,
     requested: bool = False,
@@ -733,7 +726,7 @@ def install_wheel(
                 wheel_zip=z,
                 wheel_path=wheel_path,
                 scheme=scheme,
-                pycompile=pycompile,
+                compiler=compiler,
                 warn_script_location=warn_script_location,
                 direct_url=direct_url,
                 requested=requested,
