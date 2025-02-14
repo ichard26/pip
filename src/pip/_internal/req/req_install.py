@@ -813,7 +813,7 @@ class InstallRequirement:
         prefix: Optional[str] = None,
         warn_script_location: bool = True,
         use_user_site: bool = False,
-        compiler: Optional[BytecodeCompiler] = None,
+        pycompiler: Optional[BytecodeCompiler] = None,
     ) -> None:
         assert self.req is not None
         scheme = get_scheme(
@@ -870,7 +870,7 @@ class InstallRequirement:
             self.local_file_path,
             scheme=scheme,
             req_description=str(self.req),
-            compiler=compiler,
+            pycompiler=pycompiler,
             warn_script_location=warn_script_location,
             direct_url=self.download_info if self.is_direct else None,
             requested=self.user_supplied,

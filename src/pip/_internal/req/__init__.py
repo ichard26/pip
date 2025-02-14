@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple
 
 from pip._internal.cli.progress_bars import get_install_progress_renderer
-from pip._internal.utils.compile import ParallelCompiler, SerialCompiler
+from pip._internal.utils.compile import (
+    BytecodeCompiler,
+    ParallelCompiler,
+    SerialCompiler,
+)
 from pip._internal.utils.logging import indent_log
 from pip._internal.utils.misc import strtobool
 
@@ -56,13 +60,17 @@ def install_given_reqs(
     import time
 
     t0 = time.perf_counter()
-    compiler = None
+    pycompiler: Optional[BytecodeCompiler] = None
     if pycompile:
+        # TODO: remove these debug envvars before merging
         if strtobool(os.getenv("PIP_SERIAL", "0")):
-            compiler = SerialCompiler()
+            pycompiler = SerialCompiler()
         else:
-            workers = os.getenv("PIP_WORKERS") or min(4, os.cpu_count())
-            compiler = ParallelCompiler(workers=int(workers))
+            try:
+                workers = int(os.getenv("PIP_WORKERS", 0))
+                pycompiler = ParallelCompiler(workers)
+            except (ImportError, NotImplementedError, OSError):
+                pycompiler = SerialCompiler()
 
     to_install = collections.OrderedDict(_validate_requirements(requirements))
 
@@ -83,7 +91,7 @@ def install_given_reqs(
         )
         items = renderer(items)
 
-    with indent_log(), compiler or nullcontext():
+    with indent_log(), pycompiler or nullcontext():
         for requirement in items:
             req_name = requirement.name
             assert req_name is not None
@@ -103,7 +111,7 @@ def install_given_reqs(
                     prefix=prefix,
                     warn_script_location=warn_script_location,
                     use_user_site=use_user_site,
-                    compiler=compiler,
+                    pycompiler=pycompiler,
                 )
             except Exception:
                 # if install did not succeed, rollback previous uninstall
