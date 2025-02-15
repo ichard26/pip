@@ -6,18 +6,28 @@
 
 import compileall
 import importlib
-import multiprocessing
 import os
 import sys
 import warnings
 from contextlib import redirect_stdout
 from io import StringIO
-from typing import TYPE_CHECKING, Iterable, NamedTuple, Protocol, TextIO
+from typing import (
+    TYPE_CHECKING,
+    Iterable,
+    Literal,
+    NamedTuple,
+    Optional,
+    Protocol,
+    TextIO,
+    Union,
+)
 
 if TYPE_CHECKING:
     from pip._vendor.typing_extensions import Self
 
-MAX_WORKERS = 4
+WorkerSetting = Union[int, Literal["auto"], Literal["none"]]
+
+WORKER_LIMIT = 8
 
 
 # TODO: use StringIO directly once Python 3.8 is dropped
@@ -38,20 +48,20 @@ class StreamWrapper(StringIO):
 
 
 class CompileResult(NamedTuple):
-    source_path: str
     pyc_path: str
+    source_path: str
     is_success: bool
-    log: str
+    compile_output: str
 
 
-def _compile_single(path: str) -> CompileResult:
+def _compile_single(py_path: str) -> CompileResult:
     stdout = StreamWrapper.from_stream(sys.stdout)
     with warnings.catch_warnings(), redirect_stdout(stdout):
         warnings.filterwarnings("ignore")
-        is_success = compileall.compile_file(path, force=True, quiet=True)
-    pyc_path = importlib.util.cache_from_source(path)
+        is_success = compileall.compile_file(py_path, force=True, quiet=True)
+    pyc_path = importlib.util.cache_from_source(py_path)
     # XXX: compile_file() should return a bool (typeshed bug?)
-    return CompileResult(path, pyc_path, bool(is_success), stdout.getvalue())
+    return CompileResult(py_path, pyc_path, bool(is_success), stdout.getvalue())
 
 
 class BytecodeCompiler(Protocol):
@@ -77,14 +87,9 @@ class SerialCompiler(BytecodeCompiler):
 class ParallelCompiler(BytecodeCompiler):
     """Compile a set of Python modules using a pool of subprocesses."""
 
-    def __init__(self, workers: int = 0) -> None:
-        if workers == 0:
-            try:
-                # New in Python 3.13.
-                cpus = os.process_cpu_count()  # type: ignore[attr-defined]
-            except AttributeError:
-                cpus = os.cpu_count()
-            workers = min(MAX_WORKERS, cpus or 1)
+    def __init__(self, workers: int) -> None:
+        import multiprocessing
+
         # HACK: multiprocessing imports the main module while initializing subprocesses
         # so the global state is retained in the subprocesses. Unfortunately, when pip
         # is run from a console script wrapper, the wrapper unconditionally imports
@@ -107,3 +112,58 @@ class ParallelCompiler(BytecodeCompiler):
 
     def __exit__(self, *args: object) -> None:
         self.pool.close()
+
+
+def create_bytecode_compiler(
+    preferred_workers: WorkerSetting = "auto",
+) -> BytecodeCompiler:
+    import logging
+
+    from pip._internal.utils.misc import strtobool
+
+    if strtobool(os.getenv("_PIP_SERIAL", "0")):
+        preferred_workers = "none"
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # New in Python 3.13.
+        cpus: Optional[int] = os.process_cpu_count()  # type: ignore
+    except AttributeError:
+        # Poor man's fallback. We won't respect PYTHON_CPU_COUNT, but the envvar
+        # was only added in Python 3.13 anyway.
+        try:
+            cpus = len(os.sched_getaffinity(0))  # exists on unix (usually)
+        except AttributeError:
+            cpus = os.cpu_count()
+
+    logger.debug("Detected CPU count: %s", cpus)
+    _log_note = {
+        "auto": f"(will use up to {WORKER_LIMIT})",
+        "none": "(parallelization is disabled)",
+    }.get(
+        preferred_workers, ""  # type: ignore
+    )
+    logger.debug("Configured worker count: %s %s", preferred_workers, _log_note)
+
+    # Case 1: Only one worker would be used, parallelization is thus pointless.
+    if preferred_workers == "none" or (cpus == 1 or cpus is None):
+        logger.debug("Bytecode will be compiled serially")
+        return SerialCompiler()
+
+    # Case 2: Attempt to initialize a parallelized compiler.
+    if preferred_workers == "auto":
+        workers = min(cpus, WORKER_LIMIT)
+    else:
+        workers = preferred_workers
+    try:
+        compiler = ParallelCompiler(workers)
+        logger.debug("Bytecode will be compiled using %s workers", workers)
+        return compiler
+    except (ImportError, NotImplementedError, OSError) as e:
+        # Case 3: multiprocessing is broken, fall back to serial compilation.
+        logger.debug(
+            "Bytecode will be compiled serially (multiprocessing is unavailable)",
+            exc_info=e,
+        )
+        return SerialCompiler()

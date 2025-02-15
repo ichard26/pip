@@ -40,7 +40,6 @@ from pip._internal.operations.install.editable_legacy import (
 from pip._internal.operations.install.wheel import install_wheel
 from pip._internal.pyproject import load_pyproject_toml, make_pyproject_path
 from pip._internal.req.req_uninstall import UninstallPathSet
-from pip._internal.utils.compile import BytecodeCompiler
 from pip._internal.utils.deprecation import deprecated
 from pip._internal.utils.hashes import Hashes
 from pip._internal.utils.misc import (
@@ -54,6 +53,7 @@ from pip._internal.utils.misc import (
     redact_auth_from_url,
 )
 from pip._internal.utils.packaging import get_requirement
+from pip._internal.utils.pyc_compile import BytecodeCompiler
 from pip._internal.utils.subprocess import runner_with_spinner_message
 from pip._internal.utils.temp_dir import TempDirectory, tempdir_kinds
 from pip._internal.utils.unpacking import unpack_file
