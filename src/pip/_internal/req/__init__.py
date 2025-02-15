@@ -6,13 +6,8 @@ from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple
 
 from pip._internal.cli.progress_bars import get_install_progress_renderer
-from pip._internal.utils.compile import (
-    BytecodeCompiler,
-    ParallelCompiler,
-    SerialCompiler,
-)
 from pip._internal.utils.logging import indent_log
-from pip._internal.utils.misc import strtobool
+from pip._internal.utils.pyc_compile import BytecodeCompiler, create_bytecode_compiler
 
 from .req_file import parse_requirements
 from .req_install import InstallRequirement
@@ -62,15 +57,12 @@ def install_given_reqs(
     t0 = time.perf_counter()
     pycompiler: Optional[BytecodeCompiler] = None
     if pycompile:
-        # TODO: remove these debug envvars before merging
-        if strtobool(os.getenv("PIP_SERIAL", "0")):
-            pycompiler = SerialCompiler()
-        else:
-            try:
-                workers = int(os.getenv("PIP_WORKERS", 0))
-                pycompiler = ParallelCompiler(workers)
-            except (ImportError, NotImplementedError, OSError):
-                pycompiler = SerialCompiler()
+        workers = os.getenv("_PIP_WORKERS", "auto")
+        try:
+            workers = int(workers)
+        except ValueError:
+            pass
+        pycompiler = create_bytecode_compiler(preferred_workers=workers)
 
     to_install = collections.OrderedDict(_validate_requirements(requirements))
 
