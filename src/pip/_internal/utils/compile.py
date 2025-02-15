@@ -1,3 +1,9 @@
+# -------------------------------------------------------------------------- #
+# NOTE: Importing from pip's internals or vendored modules should be AVOIDED
+#       so this module remains fast to import, minimizing the overhead of
+#       spawning a new bytecode compiler subprocess.
+# -------------------------------------------------------------------------- #
+
 import compileall
 import importlib
 import multiprocessing
@@ -79,11 +85,25 @@ class ParallelCompiler(BytecodeCompiler):
             except AttributeError:
                 cpus = os.cpu_count()
             workers = min(MAX_WORKERS, cpus or 1)
-        self.pool = multiprocessing.Pool(workers)
+        # HACK: multiprocessing imports the main module while initializing subprocesses
+        # so the global state is retained in the subprocesses. Unfortunately, when pip
+        # is run from a console script wrapper, the wrapper unconditionally imports
+        # pip._internal.cli.main and everything else it requires. This is *slow*.
+        #
+        # This module is wholly independent from the rest of the codebase, so we can
+        # avoid the costly re-import of pip by replacing sys.modules["__main__"] with
+        # any random module that does functionally nothing (e.g., pip.__init__).
+        original_main = sys.modules["__main__"]
+        sys.modules["__main__"] = sys.modules["pip"]
+        try:
+            # ctx = multiprocessing.get_context("spawn")
+            # self.pool = ctx.Pool(workers)
+            self.pool = multiprocessing.Pool(workers)
+        finally:
+            sys.modules["__main__"] = original_main
 
     def __call__(self, paths: Iterable[str]) -> Iterable[CompileResult]:
         yield from self.pool.map(_compile_single, paths)
 
     def __exit__(self, *args: object) -> None:
         self.pool.close()
-        self.pool.join()
