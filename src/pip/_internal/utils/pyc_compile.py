@@ -25,8 +25,10 @@ from typing import (
 if TYPE_CHECKING:
     from pip._vendor.typing_extensions import Self
 
+StartMethod = Literal["spawn", "forkserver", "fork"]
 WorkerSetting = Union[int, Literal["auto"], Literal["none"]]
 
+DEFAULT_START_METHOD: StartMethod = None
 WORKER_LIMIT = 8
 
 
@@ -48,8 +50,8 @@ class StreamWrapper(StringIO):
 
 
 class CompileResult(NamedTuple):
+    py_path: str
     pyc_path: str
-    source_path: str
     is_success: bool
     compile_output: str
 
@@ -87,9 +89,12 @@ class SerialCompiler(BytecodeCompiler):
 class ParallelCompiler(BytecodeCompiler):
     """Compile a set of Python modules using a pool of subprocesses."""
 
-    def __init__(self, workers: int) -> None:
+    def __init__(
+        self, workers: int, start_method: Optional[StartMethod] = None
+    ) -> None:
         import multiprocessing
 
+        self.workers = workers
         # HACK: multiprocessing imports the main module while initializing subprocesses
         # so the global state is retained in the subprocesses. Unfortunately, when pip
         # is run from a console script wrapper, the wrapper unconditionally imports
@@ -101,9 +106,8 @@ class ParallelCompiler(BytecodeCompiler):
         original_main = sys.modules["__main__"]
         sys.modules["__main__"] = sys.modules["pip"]
         try:
-            # ctx = multiprocessing.get_context("spawn")
-            # self.pool = ctx.Pool(workers)
-            self.pool = multiprocessing.Pool(workers)
+            ctx = multiprocessing.get_context(start_method or DEFAULT_START_METHOD)
+            self.pool = ctx.Pool(workers)
         finally:
             sys.modules["__main__"] = original_main
 
@@ -117,6 +121,9 @@ class ParallelCompiler(BytecodeCompiler):
 def create_bytecode_compiler(
     preferred_workers: WorkerSetting = "auto",
 ) -> BytecodeCompiler:
+    """
+    TODO: explain this logic
+    """
     import logging
 
     from pip._internal.utils.misc import strtobool
