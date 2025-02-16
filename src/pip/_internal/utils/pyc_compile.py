@@ -9,11 +9,12 @@ import importlib
 import os
 import sys
 import warnings
-from contextlib import redirect_stdout
+from contextlib import contextmanager, redirect_stdout
 from io import StringIO
 from typing import (
     TYPE_CHECKING,
     Iterable,
+    Iterator,
     Literal,
     NamedTuple,
     Optional,
@@ -25,10 +26,8 @@ from typing import (
 if TYPE_CHECKING:
     from pip._vendor.typing_extensions import Self
 
-StartMethod = Literal["spawn", "forkserver", "fork"]
 WorkerSetting = Union[int, Literal["auto"], Literal["none"]]
 
-DEFAULT_START_METHOD: StartMethod = None
 WORKER_LIMIT = 8
 
 
@@ -47,6 +46,32 @@ class StreamWrapper(StringIO):
     @property
     def encoding(self) -> str:  # type: ignore
         return self.orig_stream.encoding
+
+
+# TODO: does this apply to subinterpreters?
+@contextmanager
+def _patch_main_module_hack() -> Iterator[None]:
+    """Temporarily replace __main__ to reduce the worker startup overhead.
+
+    multiprocessing imports the main module while initializing subprocesses
+    so the global state is retained in the subprocesses. Unfortunately, when pip
+    is run from a console script wrapper, the wrapper unconditionally imports
+    pip._internal.cli.main and everything else it requires. This is *slow*.
+
+    This module is wholly independent(*) from the rest of the codebase, so we can
+    avoid the costly re-import of pip by replacing sys.modules["__main__"] with
+    any random module that does functionally nothing (e.g., pip.__init__).
+
+    (*) The entrypoint to this module does import from pip. This is fine as
+        it will be only called in the main process where the imports have
+        already executed.
+    """
+    original_main = sys.modules["__main__"]
+    sys.modules["__main__"] = sys.modules["pip"]
+    try:
+        yield
+    finally:
+        sys.modules["__main__"] = original_main
 
 
 class CompileResult(NamedTuple):
@@ -89,33 +114,32 @@ class SerialCompiler(BytecodeCompiler):
 class ParallelCompiler(BytecodeCompiler):
     """Compile a set of Python modules using a pool of subprocesses."""
 
-    def __init__(
-        self, workers: int, start_method: Optional[StartMethod] = None
-    ) -> None:
-        import multiprocessing
+    def __init__(self, workers: int) -> None:
+        from concurrent import futures
+
+        # NOTE: The concurrent pool executors are smart and will not spin up new
+        #       workers unless there are no more idle workers available. Thus,
+        #       there is no need to adjust the worker count for tiny bulk compile
+        #       jobs that wouldn't be able to fully utilize this many workers.
+        #
+        # TODO: this comment should be moved
+        if sys.version_info >= (3, 14):
+            self.pool = futures.InterpreterPoolExecutor(workers)
+        else:
+            self.pool = futures.ProcessPoolExecutor(workers)
 
         self.workers = workers
-        # HACK: multiprocessing imports the main module while initializing subprocesses
-        # so the global state is retained in the subprocesses. Unfortunately, when pip
-        # is run from a console script wrapper, the wrapper unconditionally imports
-        # pip._internal.cli.main and everything else it requires. This is *slow*.
-        #
-        # This module is wholly independent from the rest of the codebase, so we can
-        # avoid the costly re-import of pip by replacing sys.modules["__main__"] with
-        # any random module that does functionally nothing (e.g., pip.__init__).
-        original_main = sys.modules["__main__"]
-        sys.modules["__main__"] = sys.modules["pip"]
-        try:
-            ctx = multiprocessing.get_context(start_method or DEFAULT_START_METHOD)
-            self.pool = ctx.Pool(workers)
-        finally:
-            sys.modules["__main__"] = original_main
 
     def __call__(self, paths: Iterable[str]) -> Iterable[CompileResult]:
-        yield from self.pool.map(_compile_single, paths)
+        # The executors spin up new workers on the fly on as needed basis, thus
+        # this patching must be active until all paths have been processed.
+        with _patch_main_module_hack():
+            yield from self.pool.map(_compile_single, paths)
 
     def __exit__(self, *args: object) -> None:
-        self.pool.close()
+        # It's pointless to block on pool finalization, let it occur in background.
+        # TODO: does this ^ matter?
+        self.pool.shutdown(wait=False)
 
 
 def create_bytecode_compiler(
@@ -123,6 +147,12 @@ def create_bytecode_compiler(
 ) -> BytecodeCompiler:
     """
     TODO: explain this logic
+
+    - "auto": Use the number of CPUs available to the process (thread), falling
+                back to the system CPU count if unavailable. If one or no CPUs
+                are detected, a serial compiler is returned.
+
+    - "none": Parallelization is disabled, thus a serial compiler is returned.
     """
     import logging
 
@@ -165,7 +195,7 @@ def create_bytecode_compiler(
         workers = preferred_workers
     try:
         compiler = ParallelCompiler(workers)
-        logger.debug("Bytecode will be compiled using %s workers", workers)
+        logger.debug("Bytecode will be compiled using at most %s workers", workers)
         return compiler
     except (ImportError, NotImplementedError, OSError) as e:
         # Case 3: multiprocessing is broken, fall back to serial compilation.

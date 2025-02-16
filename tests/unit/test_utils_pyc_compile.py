@@ -1,5 +1,6 @@
+from functools import partial
 from pathlib import Path
-from typing import Optional, Type
+from typing import Iterator, Optional, Type
 from unittest.mock import Mock, patch
 
 import pytest
@@ -15,7 +16,8 @@ from pip._internal.utils.pyc_compile import (
 )
 
 try:
-    ParallelCompiler(1, start_method="spawn")
+    import concurrent.futures
+    import multiprocessing
 except (OSError, NotImplementedError, ImportError):
     parallel_supported = False
 else:
@@ -27,9 +29,13 @@ needs_parallel_compiler = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-def force_spawn_method(monkeypatch) -> None:
+def force_spawn_method() -> Iterator[None]:
     """Force the use of the spawn method to suppress thread-safety warnings."""
-    monkeypatch.setattr(pyc_compile, "DEFAULT_START_METHOD", "spawn")
+    if parallel_supported:
+        ctx = multiprocessing.get_context("spawn")
+        wrapped = partial(concurrent.futures.ProcessPoolExecutor, mp_context=ctx)
+        with patch.object(concurrent.futures, "ProcessPoolExecutor", wrapped):
+            yield
 
 
 class TestCompileSingle:
@@ -151,12 +157,11 @@ class TestCompilerSelection:
         assert compiler.workers == 8
 
     def test_broken_multiprocessing(self) -> None:
-        import multiprocessing
-
-        fake_ctx = Mock()
-        fake_ctx.Pool = Mock(side_effect=NotImplementedError)
+        fake_module = Mock()
+        fake_module.ProcessPoolExecutor = Mock(side_effect=NotImplementedError)
+        fake_module.InterpreterPoolExecutor = Mock(side_effect=NotImplementedError)
         with (
-            patch.object(multiprocessing, "get_context", new=lambda _: fake_ctx),
+            patch("concurrent.futures", fake_module),
             patch.object(
                 pyc_compile, "ParallelCompiler", wraps=ParallelCompiler
             ) as parallel_mock,
