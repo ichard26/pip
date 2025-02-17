@@ -707,7 +707,7 @@ def install_wheel(
     wheel_path: str,
     scheme: Scheme,
     req_description: str,
-    pycompiler: Optional[BytecodeCompiler],
+    pycompiler: Optional[BytecodeCompiler] = None,
     warn_script_location: bool = True,
     direct_url: Optional[DirectUrl] = None,
     requested: bool = False,

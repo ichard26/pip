@@ -52,7 +52,9 @@ class TestCompileSingle:
     def test_unconditional_compile(self, tmp_path: Path) -> None:
         pass
 
-    def test_no_output_leakage(self, tmp_path: Path, capsys) -> None:
+    def test_no_output_leakage(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         source_file = tmp_path / "code.py"
         source_file.write_text("import <syntax error>")
         result = _compile_single(source_file)
@@ -71,7 +73,7 @@ class TestCompileSingle:
         assert result.compile_output.strip()
         assert "SyntaxError" in result.compile_output
 
-    def test_nonexistent_file(self, tmp_path: Path):
+    def test_nonexistent_file(self, tmp_path: Path) -> None:
         result = _compile_single(tmp_path / "aaa.py")
         # XXX: this is remarkably bad design from the stdlib...
         assert result.is_success
@@ -87,10 +89,7 @@ def test_bulk_compilation(tmp_path: Path, compiler_kind: str) -> None:
         f.write_text("pass")
 
     remaining = list(files)
-    if compiler_kind == "serial":
-        compiler = SerialCompiler()
-    else:
-        compiler = ParallelCompiler(2)
+    compiler = SerialCompiler() if compiler_kind == "serial" else ParallelCompiler(2)
     for result in compiler(files):
         assert result.is_success
         assert Path(result.pyc_path).exists()
@@ -113,10 +112,7 @@ def test_bulk_compilation_with_error(tmp_path: Path, compiler_kind: str) -> None
             source_file.write_text("import <syntax error>")
             bad_files.add(source_file)
 
-    if compiler_kind == "serial":
-        compiler = SerialCompiler()
-    else:
-        compiler = ParallelCompiler(2)
+    compiler = SerialCompiler() if compiler_kind == "serial" else ParallelCompiler(2)
 
     files = good_files | bad_files
     remaining = files.copy()
