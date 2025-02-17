@@ -1070,6 +1070,40 @@ use_deprecated_feature: Callable[..., Option] = partial(
 )
 
 
+def _handle_workers(
+    option: Option, opt_str: str, value: str, parser: OptionParser
+) -> None:
+    if value in ("auto", "none"):
+        parser.values.workers = value
+        return
+
+    try:
+        if (count := int(value)) > 0:
+            parser.values.workers = count
+            return
+    except ValueError:
+        pass
+
+    msg = "should be a positive integer, 'auto' or 'none'"
+    raise_option_error(parser, option=option, msg=msg)
+
+
+workers: Callable[..., Option] = partial(
+    Option,
+    "--workers",
+    dest="workers",
+    default="auto",
+    type=str,
+    action="callback",
+    callback=_handle_workers,
+    # TODO: this is terrible
+    help=(
+        "Maximum number of workers allowed to be spun up [>0, auto, none]."
+        " (default: %default)"
+    ),
+)
+
+
 ##########
 # groups #
 ##########

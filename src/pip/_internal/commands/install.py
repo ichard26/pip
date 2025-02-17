@@ -47,6 +47,7 @@ from pip._internal.utils.misc import (
     warn_if_run_as_root,
     write_output,
 )
+from pip._internal.utils.pyc_compile import create_bytecode_compiler
 from pip._internal.utils.temp_dir import TempDirectory
 from pip._internal.utils.virtualenv import (
     running_under_virtualenv,
@@ -78,6 +79,8 @@ class InstallCommand(RequirementCommand):
       %prog [options] <archive url/path> ..."""
 
     def add_options(self) -> None:
+        self.cmd_opts.add_option(cmdoptions.workers())
+
         self.cmd_opts.add_option(cmdoptions.requirements())
         self.cmd_opts.add_option(cmdoptions.constraints())
         self.cmd_opts.add_option(cmdoptions.no_deps())
@@ -455,6 +458,13 @@ class InstallCommand(RequirementCommand):
             if options.target_dir or options.prefix_path:
                 warn_script_location = False
 
+            import time
+
+            t0 = time.perf_counter()
+            pycompiler = None
+            if options.compile:
+                pycompiler = create_bytecode_compiler(preferred_workers=options.workers)
+
             installed = install_given_reqs(
                 to_install,
                 global_options,
@@ -463,8 +473,12 @@ class InstallCommand(RequirementCommand):
                 prefix=options.prefix_path,
                 warn_script_location=warn_script_location,
                 use_user_site=options.use_user_site,
-                pycompile=options.compile,
+                pycompiler=pycompiler,
                 progress_bar=options.progress_bar,
+            )
+            elapsed = time.perf_counter() - t0
+            logger.info(
+                f"[cyan bold]install total: {elapsed:.3f}s", extra={"markup": True}
             )
 
             lib_locations = get_lib_location_guesses(

@@ -1,13 +1,12 @@
 import collections
 import logging
-import os
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Generator, List, Optional, Sequence, Tuple
 
 from pip._internal.cli.progress_bars import get_install_progress_renderer
 from pip._internal.utils.logging import indent_log
-from pip._internal.utils.pyc_compile import BytecodeCompiler, create_bytecode_compiler
+from pip._internal.utils.pyc_compile import BytecodeCompiler
 
 from .req_file import parse_requirements
 from .req_install import InstallRequirement
@@ -44,7 +43,7 @@ def install_given_reqs(
     prefix: Optional[str],
     warn_script_location: bool,
     use_user_site: bool,
-    pycompile: bool,
+    pycompiler: Optional[BytecodeCompiler],
     progress_bar: str,
 ) -> List[InstallationResult]:
     """
@@ -52,18 +51,6 @@ def install_given_reqs(
 
     (to be called after having downloaded and unpacked the packages)
     """
-    import time
-
-    t0 = time.perf_counter()
-    pycompiler: Optional[BytecodeCompiler] = None
-    if pycompile:
-        workers = os.getenv("_PIP_WORKERS", "auto")
-        try:
-            workers = int(workers)
-        except ValueError:
-            pass
-        pycompiler = create_bytecode_compiler(preferred_workers=workers)
-
     to_install = collections.OrderedDict(_validate_requirements(requirements))
 
     if to_install:
@@ -95,7 +82,6 @@ def install_given_reqs(
                 uninstalled_pathset = None
 
             try:
-                t1 = time.perf_counter()
                 requirement.install(
                     global_options,
                     root=root,
@@ -113,11 +99,7 @@ def install_given_reqs(
             else:
                 if uninstalled_pathset and requirement.install_succeeded:
                     uninstalled_pathset.commit()
-                elapsed = time.perf_counter() - t1
-                # logger.info(rf"{req_name}: {elapsed:.3f}s")
 
             installed.append(InstallationResult(req_name))
 
-    elapsed = time.perf_counter() - t0
-    logger.info(f"[cyan bold]install total: {elapsed:.3f}s", extra={"markup": True})
     return installed
