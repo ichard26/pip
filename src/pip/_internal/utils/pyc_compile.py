@@ -11,6 +11,7 @@ import sys
 import warnings
 from contextlib import contextmanager, redirect_stdout
 from io import StringIO
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Iterable,
@@ -79,7 +80,7 @@ class CompileResult(NamedTuple):
     compile_output: str
 
 
-def _compile_single(py_path: str) -> CompileResult:
+def _compile_single(py_path: Union[str, Path]) -> CompileResult:
     stdout = StreamWrapper.from_stream(sys.stdout)
     # TODO: is catching warnings necessary?
     with warnings.catch_warnings(), redirect_stdout(stdout):
@@ -105,7 +106,7 @@ class BytecodeCompiler(Protocol):
 class SerialCompiler(BytecodeCompiler):
     """Compile a set of Python modules one by one in-process."""
 
-    def __call__(self, paths: Iterable[str]) -> Iterable[CompileResult]:
+    def __call__(self, paths: Iterable[Union[str, Path]]) -> Iterable[CompileResult]:
         for p in paths:
             yield _compile_single(p)
 
@@ -129,7 +130,7 @@ class ParallelCompiler(BytecodeCompiler):
 
         self.workers = workers
 
-    def __call__(self, paths: Iterable[str]) -> Iterable[CompileResult]:
+    def __call__(self, paths: Iterable[Union[str, Path]]) -> Iterable[CompileResult]:
         # The process pool executor adds new workers on the fly on as needed basis,
         # thus this patching must be active until all paths have been processed.
         with _patch_main_module_hack():
