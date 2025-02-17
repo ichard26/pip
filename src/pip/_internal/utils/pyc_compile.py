@@ -48,10 +48,9 @@ class StreamWrapper(StringIO):
         return self.orig_stream.encoding
 
 
-# TODO: does this apply to subinterpreters?
 @contextmanager
 def _patch_main_module_hack() -> Iterator[None]:
-    """Temporarily replace __main__ to reduce the worker startup overhead.
+    """Temporarily replace __main__ to reduce the subprocess startup overhead.
 
     multiprocessing imports the main module while initializing subprocesses
     so the global state is retained in the subprocesses. Unfortunately, when pip
@@ -62,9 +61,8 @@ def _patch_main_module_hack() -> Iterator[None]:
     avoid the costly re-import of pip by replacing sys.modules["__main__"] with
     any random module that does functionally nothing (e.g., pip.__init__).
 
-    (*) The entrypoint to this module does import from pip. This is fine as
-        it will be only called in the main process where the imports have
-        already executed.
+    (*) This module's entrypoint does import from pip. This is fine as it's only
+        called in the main process where the imports have already executed.
     """
     original_main = sys.modules["__main__"]
     sys.modules["__main__"] = sys.modules["pip"]
@@ -132,8 +130,8 @@ class ParallelCompiler(BytecodeCompiler):
         self.workers = workers
 
     def __call__(self, paths: Iterable[str]) -> Iterable[CompileResult]:
-        # The executors spin up new workers on the fly on as needed basis, thus
-        # this patching must be active until all paths have been processed.
+        # The process pool executor adds new workers on the fly on as needed basis,
+        # thus this patching must be active until all paths have been processed.
         with _patch_main_module_hack():
             yield from self.pool.map(_compile_single, paths)
 
@@ -156,11 +154,6 @@ def create_bytecode_compiler(
     - "none": Parallelization is disabled, thus a serial compiler is returned.
     """
     import logging
-
-    from pip._internal.utils.misc import strtobool
-
-    if strtobool(os.getenv("_PIP_SERIAL", "0")):
-        preferred_workers = "none"
 
     logger = logging.getLogger(__name__)
     try:
