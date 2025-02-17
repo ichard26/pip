@@ -83,6 +83,7 @@ class CompileResult(NamedTuple):
 
 def _compile_single(py_path: str) -> CompileResult:
     stdout = StreamWrapper.from_stream(sys.stdout)
+    # TODO: is catching warnings necessary?
     with warnings.catch_warnings(), redirect_stdout(stdout):
         warnings.filterwarnings("ignore")
         is_success = compileall.compile_file(py_path, force=True, quiet=True)
@@ -162,7 +163,6 @@ def create_bytecode_compiler(
         preferred_workers = "none"
 
     logger = logging.getLogger(__name__)
-
     try:
         # New in Python 3.13.
         cpus: Optional[int] = os.process_cpu_count()  # type: ignore
@@ -175,15 +175,14 @@ def create_bytecode_compiler(
             cpus = os.cpu_count()
 
     logger.debug("Detected CPU count: %s", cpus)
-    _log_note = {
-        "auto": f"(will use up to {WORKER_LIMIT})",
-        "none": "(parallelization is disabled)",
-    }.get(
-        preferred_workers, ""  # type: ignore
-    )
+    _log_note = ""
+    if preferred_workers == "auto":
+        _log_note = f"(will use up to {WORKER_LIMIT})"
+    elif preferred_workers == "none":
+        _log_note = "(parallelization is disabled)"
     logger.debug("Configured worker count: %s %s", preferred_workers, _log_note)
 
-    # Case 1: Only one worker would be used, parallelization is thus pointless.
+    # Case 1: Parallelization is disabled or pointless (there's only one CPU).
     if preferred_workers == "none" or (cpus == 1 or cpus is None):
         logger.debug("Bytecode will be compiled serially")
         return SerialCompiler()
@@ -199,8 +198,5 @@ def create_bytecode_compiler(
         return compiler
     except (ImportError, NotImplementedError, OSError) as e:
         # Case 3: multiprocessing is broken, fall back to serial compilation.
-        logger.debug(
-            "Bytecode will be compiled serially (multiprocessing is unavailable)",
-            exc_info=e,
-        )
+        logger.debug("Err! Falling back to serial bytecode compilation", exc_info=e)
         return SerialCompiler()
