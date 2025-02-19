@@ -162,15 +162,14 @@ class TestCompilerSelection:
                 pyc_compile, "ParallelCompiler", wraps=ParallelCompiler
             ) as parallel_mock,
         ):
-            compiler = create_bytecode_compiler(preferred_workers=2)
+            compiler = create_bytecode_compiler(max_workers=2)
         assert isinstance(compiler, SerialCompiler)
         parallel_mock.assert_called_once()
 
-    def test_no_workers(self) -> None:
-        compiler = create_bytecode_compiler(preferred_workers="none")
+    def test_only_one_worker(self) -> None:
+        compiler = create_bytecode_compiler(max_workers=1)
         assert isinstance(compiler, SerialCompiler)
 
 
 # TODO: test serial/parallel specific logic (i.e. smoke check)
 # TODO: test serial/parallel compiler decision logic
-# TODO: skip parallel tests if unsupported

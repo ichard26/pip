@@ -1029,37 +1029,33 @@ use_deprecated_feature: Callable[..., Option] = partial(
 )
 
 
-def _handle_workers(
+def _handle_jobs(
     option: Option, opt_str: str, value: str, parser: OptionParser
 ) -> None:
-    if value in ("auto", "none"):
-        parser.values.workers = value
+    if value == "auto":
+        setattr(parser.values, option.dest, "auto")
         return
 
     try:
         if (count := int(value)) > 0:
-            parser.values.workers = count
+            setattr(parser.values, option.dest, count)
             return
     except ValueError:
         pass
 
-    msg = "should be a positive integer, 'auto' or 'none'"
+    msg = "should be a positive integer or 'auto'"
     raise_option_error(parser, option=option, msg=msg)
 
 
-workers: Callable[..., Option] = partial(
+install_jobs: Callable[..., Option] = partial(
     Option,
-    "--workers",
-    dest="workers",
+    "--install-jobs",
+    dest="install_jobs",
     default="auto",
     type=str,
     action="callback",
-    callback=_handle_workers,
-    # TODO: this is terrible
-    help=(
-        "Maximum number of workers allowed to be spun up [>0, auto, none]."
-        " (default: %default)"
-    ),
+    callback=_handle_jobs,
+    help="Maximum number of processes used while installing packages. (default: auto)",
 )
 
 
