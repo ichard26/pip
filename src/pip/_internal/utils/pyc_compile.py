@@ -27,7 +27,7 @@ from typing import (
 if TYPE_CHECKING:
     from pip._vendor.typing_extensions import Self
 
-WorkerSetting = Union[int, Literal["auto"], Literal["none"]]
+WorkerSetting = Union[int, Literal["auto"]]
 
 WORKER_LIMIT = 8
 
@@ -122,7 +122,7 @@ class ParallelCompiler(BytecodeCompiler):
         #       there is no need to adjust the worker count for tiny bulk compile
         #       jobs that wouldn't be able to fully utilize this many workers.
         #
-        # TODO: this comment should be moved
+        # TODO: this comment should be moved (and isn't true for fork)
         if sys.version_info >= (3, 14):
             self.pool = futures.InterpreterPoolExecutor(workers)
         else:
@@ -142,9 +142,7 @@ class ParallelCompiler(BytecodeCompiler):
         self.pool.shutdown(wait=False)
 
 
-def create_bytecode_compiler(
-    preferred_workers: WorkerSetting = "auto",
-) -> BytecodeCompiler:
+def create_bytecode_compiler(max_workers: WorkerSetting = "auto") -> BytecodeCompiler:
     """
     TODO: explain this logic
 
@@ -169,23 +167,19 @@ def create_bytecode_compiler(
             cpus = os.cpu_count()
 
     logger.debug("Detected CPU count: %s", cpus)
-    _log_note = ""
-    if preferred_workers == "auto":
-        _log_note = f"(will use up to {WORKER_LIMIT})"
-    elif preferred_workers == "none":
-        _log_note = "(parallelization is disabled)"
-    logger.debug("Configured worker count: %s %s", preferred_workers, _log_note)
+    logger.debug(
+        "Configured worker count: %s %s",
+        max_workers,
+        f"(will use up to {WORKER_LIMIT})" if max_workers == "auto" else "",
+    )
 
     # Case 1: Parallelization is disabled or pointless (there's only one CPU).
-    if preferred_workers == "none" or (cpus == 1 or cpus is None):
+    if max_workers == 1 or cpus == 1 or cpus is None:
         logger.debug("Bytecode will be compiled serially")
         return SerialCompiler()
 
     # Case 2: Attempt to initialize a parallelized compiler.
-    if preferred_workers == "auto":
-        workers = min(cpus, WORKER_LIMIT)
-    else:
-        workers = preferred_workers
+    workers = min(cpus, WORKER_LIMIT) if max_workers == "auto" else max_workers
     try:
         compiler = ParallelCompiler(workers)
         logger.debug("Bytecode will be compiled using at most %s workers", workers)

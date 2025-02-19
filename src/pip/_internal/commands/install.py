@@ -79,8 +79,6 @@ class InstallCommand(RequirementCommand):
       %prog [options] <archive url/path> ..."""
 
     def add_options(self) -> None:
-        self.cmd_opts.add_option(cmdoptions.workers())
-
         self.cmd_opts.add_option(cmdoptions.requirements())
         self.cmd_opts.add_option(cmdoptions.constraints())
         self.cmd_opts.add_option(cmdoptions.no_deps())
@@ -273,6 +271,8 @@ class InstallCommand(RequirementCommand):
             ),
         )
 
+        self.cmd_opts.add_option(cmdoptions.install_jobs())
+
     @with_cleanup
     def run(self, options: Values, args: List[str]) -> int:
         if options.use_user_site and options.target_dir is not None:
@@ -463,7 +463,7 @@ class InstallCommand(RequirementCommand):
             t0 = time.perf_counter()
             pycompiler = None
             if options.compile:
-                pycompiler = create_bytecode_compiler(preferred_workers=options.workers)
+                pycompiler = create_bytecode_compiler(max_workers=options.install_jobs)
 
             installed = install_given_reqs(
                 to_install,
