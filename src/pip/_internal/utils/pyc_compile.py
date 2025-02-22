@@ -1,7 +1,7 @@
 # -------------------------------------------------------------------------- #
 # NOTE: Importing from pip's internals or vendored modules should be AVOIDED
 #       so this module remains fast to import, minimizing the overhead of
-#       spawning a new bytecode compiler subprocess.
+#       spawning a new bytecode compiler worker.
 # -------------------------------------------------------------------------- #
 
 import compileall
@@ -81,14 +81,19 @@ class CompileResult(NamedTuple):
 
 
 def _compile_single(py_path: Union[str, Path]) -> CompileResult:
+    # For some reason, compile_file() will silently do nothing and return True
+    # even if the source file does not exist.
+    if not os.path.exists(py_path):
+        raise FileNotFoundError(f"Python file {py_path!s} does not exist!")
+
     stdout = StreamWrapper.from_stream(sys.stdout)
-    # TODO: is catching warnings necessary?
     with warnings.catch_warnings(), redirect_stdout(stdout):
         warnings.filterwarnings("ignore")
-        is_success = compileall.compile_file(py_path, force=True, quiet=True)
-    pyc_path = importlib.util.cache_from_source(py_path)
-    # XXX: compile_file() should return a bool (typeshed bug?)
-    return CompileResult(py_path, pyc_path, bool(is_success), stdout.getvalue())
+        success = compileall.compile_file(py_path, force=True, quiet=True)
+    pyc_path = importlib.util.cache_from_source(py_path)  # type: ignore[arg-type]
+    return CompileResult(
+        str(py_path), pyc_path, success, stdout.getvalue()  # type: ignore[arg-type]
+    )
 
 
 class BytecodeCompiler(Protocol):
@@ -117,44 +122,42 @@ class ParallelCompiler(BytecodeCompiler):
     def __init__(self, workers: int) -> None:
         from concurrent import futures
 
-        # NOTE: The concurrent pool executors are smart and will not spin up new
-        #       workers unless there are no more idle workers available. Thus,
-        #       there is no need to adjust the worker count for tiny bulk compile
-        #       jobs that wouldn't be able to fully utilize this many workers.
-        #
-        # TODO: this comment should be moved (and isn't true for fork)
+        # The concurrent executors are smart and will only spin up new workers
+        # if there are no more idle workers available for a task. Thus we don't
+        # need to adjust the worker count for tiny bulk compile jobs that
+        # wouldn't be able to fully utilize all of the workers. (If the fork
+        # multiprocessing method is used, this is NOT true, but fork is
+        # sufficiently fast that it doesn't really matter).
         if sys.version_info >= (3, 14):
             self.pool = futures.InterpreterPoolExecutor(workers)
         else:
             self.pool = futures.ProcessPoolExecutor(workers)
-
         self.workers = workers
 
     def __call__(self, paths: Iterable[Union[str, Path]]) -> Iterable[CompileResult]:
-        # The process pool executor adds new workers on the fly on as needed basis,
-        # thus this patching must be active until all paths have been processed.
+        # The concurrent executors add new workers on-demand, thus this patching
+        # needs to be active until all paths have been processed.
         with _patch_main_module_hack():
             yield from self.pool.map(_compile_single, paths)
 
     def __exit__(self, *args: object) -> None:
         # It's pointless to block on pool finalization, let it occur in background.
-        # TODO: does this ^ matter?
         self.pool.shutdown(wait=False)
 
 
 def create_bytecode_compiler(max_workers: WorkerSetting = "auto") -> BytecodeCompiler:
-    """
-    TODO: explain this logic
+    """Return a bytecode compiler appropriate for the workload and platform.
 
-    - "auto": Use the number of CPUs available to the process (thread), falling
-                back to the system CPU count if unavailable. If one or no CPUs
-                are detected, a serial compiler is returned.
+    Parallelization will only be used if:
+      - There is "enough" code to be compiled to offset the worker startup overhead
+      - There are 2 or more CPUs available
+      - The maximum # of workers permitted is at least 2
 
-    - "none": Parallelization is disabled, thus a serial compiler is returned.
+    A maximum worker count of "auto" will use the number of CPUs available to the
+    process or system, up to a hard-coded limit (to avoid resource exhaustion).
     """
     import logging
 
-    logger = logging.getLogger(__name__)
     try:
         # New in Python 3.13.
         cpus: Optional[int] = os.process_cpu_count()  # type: ignore
@@ -166,12 +169,9 @@ def create_bytecode_compiler(max_workers: WorkerSetting = "auto") -> BytecodeCom
         except AttributeError:
             cpus = os.cpu_count()
 
+    logger = logging.getLogger(__name__)
     logger.debug("Detected CPU count: %s", cpus)
-    logger.debug(
-        "Configured worker count: %s %s",
-        max_workers,
-        f"(will use up to {WORKER_LIMIT})" if max_workers == "auto" else "",
-    )
+    logger.debug("Configured worker count: %s", max_workers)
 
     # Case 1: Parallelization is disabled or pointless (there's only one CPU).
     if max_workers == 1 or cpus == 1 or cpus is None:

@@ -74,10 +74,8 @@ class TestCompileSingle:
         assert "SyntaxError" in result.compile_output
 
     def test_nonexistent_file(self, tmp_path: Path) -> None:
-        result = _compile_single(tmp_path / "aaa.py")
-        # XXX: this is remarkably bad design from the stdlib...
-        assert result.is_success
-        assert not Path(result.pyc_path).exists()
+        with pytest.raises(FileNotFoundError):
+            _compile_single(tmp_path / "aaa.py")
 
 
 @pytest.mark.parametrize(

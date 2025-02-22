@@ -601,13 +601,11 @@ def _install_wheel(  # noqa: C901 function is too long
 
     # Compile all of the pyc files for the installed files
     if pycompiler is not None:
-        for pyc in pycompiler(pyc_source_file_paths()):
-            if pyc.is_success:
-                pyc_path = pyc.pyc_path
-                assert os.path.exists(pyc_path)
-                pyc_record_path = cast("RecordPath", pyc_path.replace(os.path.sep, "/"))
-                record_installed(pyc_record_path, pyc_path)
-            if output := pyc.compile_output:
+        for module in pycompiler(pyc_source_file_paths()):
+            if module.is_success:
+                pyc_record_path = module.pyc_path.replace(os.path.sep, "/")
+                record_installed(RecordPath(pyc_record_path), module.pyc_path)
+            if output := module.compile_output:
                 logger.debug(output)
 
     maker = PipScriptMaker(None, scheme.scripts)
