@@ -9,21 +9,11 @@ import importlib
 import os
 import sys
 import warnings
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-    Iterable,
-    Iterator,
-    Literal,
-    NamedTuple,
-    Optional,
-    Protocol,
-    TextIO,
-    Union,
-)
+from typing import TYPE_CHECKING, Literal, NamedTuple, Optional, Protocol, Union
 
 if TYPE_CHECKING:
     from pip._vendor.typing_extensions import Self
@@ -33,35 +23,18 @@ WorkerSetting = Union[int, Literal["auto"]]
 WORKER_LIMIT = 8
 
 
-# TODO: use StringIO directly once Python 3.8 is dropped
-class StreamWrapper(StringIO):
-    orig_stream: TextIO
-
-    @classmethod
-    def from_stream(cls, orig_stream: TextIO) -> "StreamWrapper":
-        ret = cls()
-        ret.orig_stream = orig_stream
-        return ret
-
-    # compileall.compile_dir() needs stdout.encoding to print to stdout
-    # type ignore is because TextIOBase.encoding is writeable
-    @property
-    def encoding(self) -> str:  # type: ignore
-        return self.orig_stream.encoding
-
-
 @contextmanager
 def _patch_main_module_hack() -> Iterator[None]:
     """Temporarily replace __main__ to reduce the worker startup overhead.
 
     concurrent.futures imports the main module while initializing new workers
-    so the global state is retained in the workers. Unfortunately, when pip
+    so any global state is retained in the workers. Unfortunately, when pip
     is run from a console script wrapper, the wrapper unconditionally imports
     pip._internal.cli.main and everything else it requires. This is *slow*.
 
-    The compilation code is wholly independent from the rest of the codebase,
-    so we can avoid the costly re-import of pip by replacing __main__ with any
-    random module that does functionally nothing (e.g., pip.__init__).
+    The compilation code does not depend on any global state, thus the costly
+    re-import of pip can be avoided by replacing __main__ with any random
+    module that does nothing.
     """
     original_main = sys.modules["__main__"]
     sys.modules["__main__"] = sys.modules["pip"]
@@ -84,8 +57,7 @@ def _compile_single(py_path: Union[str, Path]) -> CompileResult:
     if not os.path.exists(py_path):
         raise FileNotFoundError(f"Python file {py_path!s} does not exist!")
 
-    stdout = StreamWrapper.from_stream(sys.stdout)
-    with warnings.catch_warnings(), redirect_stdout(stdout):
+    with warnings.catch_warnings(), redirect_stdout(StringIO()) as stdout:
         warnings.filterwarnings("ignore")
         success = compileall.compile_file(py_path, force=True, quiet=True)
     pyc_path = importlib.util.cache_from_source(py_path)  # type: ignore[arg-type]
@@ -120,12 +92,6 @@ class ParallelCompiler(BytecodeCompiler):
     def __init__(self, workers: int) -> None:
         from concurrent import futures
 
-        # The concurrent executors are smart and will only spin up new workers
-        # if there are no more idle workers available for a task. Thus we don't
-        # need to adjust the worker count for tiny bulk compile jobs that
-        # wouldn't be able to fully utilize all of the workers. (If the fork
-        # multiprocessing method is used, this is NOT true, but fork is
-        # sufficiently fast that it doesn't really matter).
         if sys.version_info >= (3, 14):
             self.pool = futures.InterpreterPoolExecutor(workers)
         else:
@@ -133,8 +99,7 @@ class ParallelCompiler(BytecodeCompiler):
         self.workers = workers
 
     def __call__(self, paths: Iterable[Union[str, Path]]) -> Iterable[CompileResult]:
-        # The concurrent executors add new workers on-demand, thus this patching
-        # needs to be active until all paths have been processed.
+        # New workers can be started at any time, so patch until fully done.
         with _patch_main_module_hack():
             yield from self.pool.map(_compile_single, paths)
 
@@ -189,6 +154,10 @@ def create_bytecode_compiler(
         return SerialCompiler()
 
     # Case 3: Attempt to initialize a parallelized compiler.
+    # The concurrent executors will spin up new workers on a "on-demand basis",
+    # which helps to avoid wasting time on starting new workers that won't be
+    # used. (** This isn't true for the fork start method, but forking is
+    # fast enough that it doesn't really matter.)
     workers = min(cpus, WORKER_LIMIT) if max_workers == "auto" else max_workers
     try:
         compiler = ParallelCompiler(workers)

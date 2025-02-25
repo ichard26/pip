@@ -10,7 +10,6 @@ import shutil
 import sys
 from base64 import urlsafe_b64encode
 from email.message import Message
-from io import StringIO
 from itertools import chain, filterfalse, starmap
 from typing import (
     IO,
