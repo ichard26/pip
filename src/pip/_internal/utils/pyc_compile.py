@@ -52,10 +52,9 @@ class CompileResult(NamedTuple):
 
 
 def _compile_single(py_path: Union[str, Path]) -> CompileResult:
-    # For some reason, compile_file() will silently do nothing and return True
-    # even if the source file does not exist.
+    # compile_file() returns True silently even if the source file is nonexistent.
     if not os.path.exists(py_path):
-        raise FileNotFoundError(f"Python file {py_path!s} does not exist!")
+        raise FileNotFoundError(f"Python file '{py_path!s}' does not exist")
 
     with warnings.catch_warnings(), redirect_stdout(StringIO()) as stdout:
         warnings.filterwarnings("ignore")
@@ -118,7 +117,7 @@ def create_bytecode_compiler(
       - There are 2 or more CPUs available
       - The maximum # of workers permitted is at least 2
       - There is "enough" code to be compiled to offset the worker startup overhead
-          (if it can be determined in advance)
+          (if it can be determined in advance via code_size_check)
 
     A maximum worker count of "auto" will use the number of CPUs available to the
     process or system, up to a hard-coded limit (to avoid resource exhaustion).

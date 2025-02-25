@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from typing import Iterator, Optional, Type
@@ -28,6 +29,12 @@ needs_parallel_compiler = pytest.mark.skipif(
 )
 
 
+@contextmanager
+def patch_cpu_count(n: Optional[int]) -> Iterator[None]:
+    with patch("os.process_cpu_count", new=lambda: n, create=True):
+        yield
+
+
 @pytest.fixture(autouse=True)
 def force_spawn_method() -> Iterator[None]:
     """Force the use of the spawn method to suppress thread-safety warnings."""
@@ -49,22 +56,9 @@ class TestCompileSingle:
         assert "__pycache__" in result.pyc_path
         assert Path(result.pyc_path).exists()
 
-    def test_unconditional_compile(self, tmp_path: Path) -> None:
-        pass
-
-    def test_no_output_leakage(
+    def test_syntax_error(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        source_file = tmp_path / "code.py"
-        source_file.write_text("import <syntax error>")
-        result = _compile_single(source_file)
-
-        stdout, stderr = capsys.readouterr()
-        assert not stdout
-        assert not stderr
-        assert result.compile_output.strip()
-
-    def test_syntax_error(self, tmp_path: Path) -> None:
         source_file = tmp_path / "code.py"
         source_file.write_text("import <syntax error>")
 
@@ -72,6 +66,10 @@ class TestCompileSingle:
         assert not result.is_success
         assert result.compile_output.strip()
         assert "SyntaxError" in result.compile_output
+
+        stdout, stderr = capsys.readouterr()
+        assert not stdout, "output should be captured"
+        assert not stderr, "compileall does not use sys.stderr"
 
     def test_nonexistent_file(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
@@ -131,21 +129,20 @@ def test_bulk_compilation_with_error(tmp_path: Path, compiler_kind: str) -> None
 @needs_parallel_compiler
 class TestCompilerSelection:
     @pytest.mark.parametrize(
-        "n, expected_type",
+        "cpus, expected_type",
         [(None, SerialCompiler), (1, SerialCompiler), (2, ParallelCompiler)],
     )
     def test_cpu_count(
-        self, n: Optional[int], expected_type: Type[BytecodeCompiler]
+        self, cpus: Optional[int], expected_type: Type[BytecodeCompiler]
     ) -> None:
-        with patch("os.process_cpu_count", new=lambda: n, create=True):
+        with patch_cpu_count(cpus):
             compiler = create_bytecode_compiler()
         assert isinstance(compiler, expected_type)
         if isinstance(compiler, ParallelCompiler):
-            assert compiler.workers == n
+            assert compiler.workers == cpus
 
     def test_cpu_count_exceeds_limit(self) -> None:
-        # XXX: this may be too slow...?
-        with patch("os.process_cpu_count", new=lambda: 10, create=True):
+        with patch_cpu_count(10):
             compiler = create_bytecode_compiler()
         assert isinstance(compiler, ParallelCompiler)
         assert compiler.workers == 8
@@ -165,9 +162,11 @@ class TestCompilerSelection:
         parallel_mock.assert_called_once()
 
     def test_only_one_worker(self) -> None:
-        compiler = create_bytecode_compiler(max_workers=1)
+        with patch_cpu_count(2):
+            compiler = create_bytecode_compiler(max_workers=1)
         assert isinstance(compiler, SerialCompiler)
 
-
-# TODO: test serial/parallel specific logic (i.e. smoke check)
-# TODO: test serial/parallel compiler decision logic
+    def test_not_enough_code(self) -> None:
+        with patch_cpu_count(2):
+            compiler = create_bytecode_compiler(code_size_check=lambda threshold: False)
+        assert isinstance(compiler, SerialCompiler)
