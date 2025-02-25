@@ -2,11 +2,13 @@ import collections
 import logging
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Generator, List, Optional, Sequence, Tuple
+from functools import partial
+from typing import Generator, Iterable, List, Optional, Sequence, Tuple
+from zipfile import ZipFile
 
 from pip._internal.cli.progress_bars import get_install_progress_renderer
 from pip._internal.utils.logging import indent_log
-from pip._internal.utils.pyc_compile import BytecodeCompiler
+from pip._internal.utils.pyc_compile import WorkerSetting, create_bytecode_compiler
 
 from .req_file import parse_requirements
 from .req_install import InstallRequirement
@@ -35,6 +37,22 @@ def _validate_requirements(
         yield req.name, req
 
 
+def _does_python_size_surpass_thresold(
+    requirements: Iterable[InstallRequirement], threshold: int
+) -> bool:
+    py_size = 0
+    for req in requirements:
+        assert req.local_file_path
+        with ZipFile(req.local_file_path, allowZip64=True) as wheel_file:
+            for entry in wheel_file.infolist():
+                if entry.filename.endswith(".py"):
+                    py_size += entry.file_size
+                    if py_size > threshold:
+                        return True
+
+    return False
+
+
 def install_given_reqs(
     requirements: List[InstallRequirement],
     global_options: Sequence[str],
@@ -43,8 +61,9 @@ def install_given_reqs(
     prefix: Optional[str],
     warn_script_location: bool,
     use_user_site: bool,
-    pycompiler: Optional[BytecodeCompiler],
+    pycompile: bool,
     progress_bar: str,
+    workers: WorkerSetting,
 ) -> List[InstallationResult]:
     """
     Install everything in the given list.
@@ -69,6 +88,9 @@ def install_given_reqs(
             bar_type=progress_bar, total=len(to_install)
         )
         items = renderer(items)
+
+    code_size_check = partial(_does_python_size_surpass_thresold, to_install.values())
+    pycompiler = create_bytecode_compiler(workers, code_size_check)
 
     with indent_log(), pycompiler or nullcontext():
         for requirement in items:

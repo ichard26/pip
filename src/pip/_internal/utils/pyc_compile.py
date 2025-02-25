@@ -14,6 +14,7 @@ from io import StringIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
+    Callable,
     Iterable,
     Iterator,
     Literal,
@@ -51,19 +52,16 @@ class StreamWrapper(StringIO):
 
 @contextmanager
 def _patch_main_module_hack() -> Iterator[None]:
-    """Temporarily replace __main__ to reduce the subprocess startup overhead.
+    """Temporarily replace __main__ to reduce the worker startup overhead.
 
-    multiprocessing imports the main module while initializing subprocesses
-    so the global state is retained in the subprocesses. Unfortunately, when pip
+    concurrent.futures imports the main module while initializing new workers
+    so the global state is retained in the workers. Unfortunately, when pip
     is run from a console script wrapper, the wrapper unconditionally imports
     pip._internal.cli.main and everything else it requires. This is *slow*.
 
-    This module is wholly independent(*) from the rest of the codebase, so we can
-    avoid the costly re-import of pip by replacing sys.modules["__main__"] with
-    any random module that does functionally nothing (e.g., pip.__init__).
-
-    (*) This module's entrypoint does import from pip. This is fine as it's only
-        called in the main process where the imports have already executed.
+    The compilation code is wholly independent from the rest of the codebase,
+    so we can avoid the costly re-import of pip by replacing __main__ with any
+    random module that does functionally nothing (e.g., pip.__init__).
     """
     original_main = sys.modules["__main__"]
     sys.modules["__main__"] = sys.modules["pip"]
@@ -117,7 +115,7 @@ class SerialCompiler(BytecodeCompiler):
 
 
 class ParallelCompiler(BytecodeCompiler):
-    """Compile a set of Python modules using a pool of subprocesses."""
+    """Compile a set of Python modules using a pool of workers."""
 
     def __init__(self, workers: int) -> None:
         from concurrent import futures
@@ -145,16 +143,23 @@ class ParallelCompiler(BytecodeCompiler):
         self.pool.shutdown(wait=False)
 
 
-def create_bytecode_compiler(max_workers: WorkerSetting = "auto") -> BytecodeCompiler:
+def create_bytecode_compiler(
+    max_workers: WorkerSetting = "auto",
+    code_size_check: Optional[Callable[[int], bool]] = None,
+) -> BytecodeCompiler:
     """Return a bytecode compiler appropriate for the workload and platform.
 
     Parallelization will only be used if:
-      - There is "enough" code to be compiled to offset the worker startup overhead
       - There are 2 or more CPUs available
       - The maximum # of workers permitted is at least 2
+      - There is "enough" code to be compiled to offset the worker startup overhead
+          (if it can be determined in advance)
 
     A maximum worker count of "auto" will use the number of CPUs available to the
     process or system, up to a hard-coded limit (to avoid resource exhaustion).
+
+    code_size_check is a callable that receives the code size threshold (in # of
+    bytes) for parallelization and returns whether it will be surpassed or not.
     """
     import logging
 
@@ -178,13 +183,18 @@ def create_bytecode_compiler(max_workers: WorkerSetting = "auto") -> BytecodeCom
         logger.debug("Bytecode will be compiled serially")
         return SerialCompiler()
 
-    # Case 2: Attempt to initialize a parallelized compiler.
+    # Case 2: There isn't enough code for parallelization to be worth it.
+    if code_size_check is not None and not code_size_check(1000 * 1000):
+        logger.debug("Bytecode will be compiled serially (not enough .py code)")
+        return SerialCompiler()
+
+    # Case 3: Attempt to initialize a parallelized compiler.
     workers = min(cpus, WORKER_LIMIT) if max_workers == "auto" else max_workers
     try:
         compiler = ParallelCompiler(workers)
         logger.debug("Bytecode will be compiled using at most %s workers", workers)
         return compiler
     except (ImportError, NotImplementedError, OSError) as e:
-        # Case 3: multiprocessing is broken, fall back to serial compilation.
+        # Case 4: multiprocessing is broken, fall back to serial compilation.
         logger.debug("Err! Falling back to serial bytecode compilation", exc_info=e)
         return SerialCompiler()

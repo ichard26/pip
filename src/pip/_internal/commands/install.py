@@ -47,7 +47,6 @@ from pip._internal.utils.misc import (
     warn_if_run_as_root,
     write_output,
 )
-from pip._internal.utils.pyc_compile import create_bytecode_compiler
 from pip._internal.utils.temp_dir import TempDirectory
 from pip._internal.utils.virtualenv import (
     running_under_virtualenv,
@@ -461,10 +460,6 @@ class InstallCommand(RequirementCommand):
             import time
 
             t0 = time.perf_counter()
-            pycompiler = None
-            if options.compile:
-                pycompiler = create_bytecode_compiler(max_workers=options.install_jobs)
-
             installed = install_given_reqs(
                 to_install,
                 global_options,
@@ -473,8 +468,9 @@ class InstallCommand(RequirementCommand):
                 prefix=options.prefix_path,
                 warn_script_location=warn_script_location,
                 use_user_site=options.use_user_site,
-                pycompiler=pycompiler,
+                pycompile=options.compile,
                 progress_bar=options.progress_bar,
+                workers=options.install_jobs,
             )
             elapsed = time.perf_counter() - t0
             logger.info(
