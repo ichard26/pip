@@ -5,7 +5,7 @@ pytest
 pytest-cov
 pytest-rerunfailures
 pytest-xdist
-scripttest
+scripttest @ https://github.com/pypa/scripttest/archive/main.zip
 setuptools
 # macOS (darwin) arm64 always uses virtualenv >= 20.0
 # for other platforms, it depends on python version
