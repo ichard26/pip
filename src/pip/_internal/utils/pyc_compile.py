@@ -26,16 +26,15 @@ WORKER_LIMIT = 8
 
 @contextmanager
 def _patch_main_module_hack() -> Iterator[None]:
-    """Temporarily replace __main__ to reduce the worker startup overhead.
+    """Temporarily replace __main__ to reduce worker startup overhead.
 
-    concurrent.futures imports the main module while initializing new workers
-    so any global state is retained in the workers. Unfortunately, when pip
-    is run from a console script wrapper, the wrapper unconditionally imports
-    pip._internal.cli.main and everything else it requires. This is *slow*.
+    concurrent.futures imports the __main__ module while initializing new
+    workers (so global state is persisted). Unfortunately, when pip is
+    invoked via a console script, the wrapper unconditionally imports
+    pip._internal.cli.main and its dependencies. This is *slow*.
 
-    The compilation code does not depend on any global state, thus the costly
-    re-import of pip can be avoided by replacing __main__ with any random
-    module that does nothing.
+    The compilation code does not depend on this, so avoid the costly
+    re-import of pip by replacing __main__ with a lightweight module.
     """
     original_main = sys.modules["__main__"]
     sys.modules["__main__"] = sys.modules["pip"]
@@ -60,10 +59,8 @@ def _compile_single(py_path: Union[str, Path]) -> CompileResult:
     with warnings.catch_warnings(), redirect_stdout(StringIO()) as stdout:
         warnings.filterwarnings("ignore")
         success = compileall.compile_file(py_path, force=True, quiet=True)
-    pyc_path = importlib.util.cache_from_source(py_path)  # type: ignore[arg-type]
-    return CompileResult(
-        str(py_path), pyc_path, success, stdout.getvalue()  # type: ignore[arg-type]
-    )
+    pyc_path = importlib.util.cache_from_source(py_path)
+    return CompileResult(str(py_path), pyc_path, success, stdout.getvalue())
 
 
 class BytecodeCompiler(Protocol):
@@ -118,8 +115,7 @@ def create_bytecode_compiler(
     Parallelization will only be used if:
       - There are 2 or more CPUs available
       - The maximum # of workers permitted is at least 2
-      - There is "enough" code to be compiled to offset the worker startup overhead
-          (if it can be determined in advance via code_size_check)
+      - There is "enough" code to compile (if known)
 
     A maximum worker count of "auto" will use the number of CPUs available to the
     process or system, up to a hard-coded limit (to avoid resource exhaustion).
@@ -133,10 +129,9 @@ def create_bytecode_compiler(
         # New in Python 3.13.
         cpus: Optional[int] = os.process_cpu_count()  # type: ignore
     except AttributeError:
-        # Poor man's fallback. We won't respect PYTHON_CPU_COUNT, but the envvar
-        # was only added in Python 3.13 anyway.
         try:
-            cpus = len(os.sched_getaffinity(0))  # exists on unix (usually)
+            # Unix-only alternative for process_cpu_count()
+            cpus = len(os.sched_getaffinity(0))
         except AttributeError:
             cpus = os.cpu_count()
 
