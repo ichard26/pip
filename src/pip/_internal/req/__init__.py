@@ -2,7 +2,6 @@ import collections
 import logging
 from contextlib import nullcontext
 from dataclasses import dataclass
-from functools import partial
 from typing import Generator, Iterable, List, Optional, Sequence, Tuple
 from zipfile import ZipFile
 
@@ -35,28 +34,6 @@ def _validate_requirements(
     for req in requirements:
         assert req.name, f"invalid to-be-installed requirement: {req}"
         yield req.name, req
-
-
-def _does_python_size_surpass_threshold(
-    requirements: Iterable[InstallRequirement], threshold: int
-) -> bool:
-    """Inspect wheels to check whether there is enough .py code to
-    enable bytecode parallelization.
-    """
-    py_size = 0
-    for req in requirements:
-        if not req.local_file_path or not req.is_wheel:
-            # No wheel to inspect as this is a legacy editable.
-            continue
-
-        with ZipFile(req.local_file_path, allowZip64=True) as wheel_file:
-            for entry in wheel_file.infolist():
-                if entry.filename.endswith(".py"):
-                    py_size += entry.file_size
-                    if py_size > threshold:
-                        return True
-
-    return False
 
 
 def install_given_reqs(
@@ -95,13 +72,28 @@ def install_given_reqs(
         )
         items = renderer(items)
 
+    pycompiler = None
     if pycompile:
-        code_size_check = partial(
-            _does_python_size_surpass_threshold, to_install.values()
-        )
+
+        def code_size_check(threshold: int) -> bool:
+            """Inspect wheels to check whether there is enough Python code to
+            enable bytecode parallelization.
+            """
+            py_size = 0
+            for req in to_install.values():
+                if not req.local_file_path or not req.is_wheel:
+                    # No wheel to inspect as this is a legacy editable.
+                    continue
+
+                with ZipFile(req.local_file_path, allowZip64=True) as wheel:
+                    for entry in wheel.infolist():
+                        if entry.filename.endswith(".py"):
+                            py_size += entry.file_size
+                            if py_size > threshold:
+                                return True
+            return False
+
         pycompiler = create_bytecode_compiler(workers, code_size_check)
-    else:
-        pycompiler = None
 
     with indent_log(), pycompiler or nullcontext():
         for requirement in items:

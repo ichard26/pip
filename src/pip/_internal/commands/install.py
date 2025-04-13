@@ -419,10 +419,6 @@ class InstallCommand(RequirementCommand):
                 # we're not modifying it.
                 modifying_pip = pip_req.satisfied_by is None
             protect_pip_from_modification_on_windows(modifying_pip=modifying_pip)
-            if modifying_pip:
-                # Parallelization will re-import pip when starting new workers
-                # during installation which is unsafe if pip is being modified.
-                options.install_jobs = 1
 
             reqs_to_build = [
                 r
