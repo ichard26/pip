@@ -1,7 +1,6 @@
 # -------------------------------------------------------------------------- #
 # NOTE: Importing from pip's internals or vendored modules should be AVOIDED
-#       so this module remains fast to import, minimizing the overhead of
-#       spawning a new bytecode compiler worker.
+#       to minimize the overhead of spawning a new bytecode compiler worker.
 # -------------------------------------------------------------------------- #
 
 import compileall
@@ -10,13 +9,10 @@ import os
 import sys
 import warnings
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager, redirect_stdout
+from contextlib import AbstractContextManager, contextmanager, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, NamedTuple, Optional, Protocol, Union
-
-if TYPE_CHECKING:
-    from pip._vendor.typing_extensions import Self
+from typing import Literal, NamedTuple, Optional, Protocol, Union
 
 WorkerSetting = Union[int, Literal["auto"]]
 
@@ -63,16 +59,12 @@ def _compile_single(py_path: Union[str, Path]) -> CompileResult:
     return CompileResult(str(py_path), pyc_path, success, stdout.getvalue())
 
 
-class BytecodeCompiler(Protocol):
+class BytecodeCompiler(Protocol, AbstractContextManager):  # type: ignore[type-arg]
     """Abstraction for compiling Python modules into bytecode in bulk."""
 
     def __call__(self, paths: Iterable[str]) -> Iterable[CompileResult]: ...
-
-    def __enter__(self) -> "Self":
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        return
+    def __exit__(self, *exe: object) -> None:
+        return None
 
 
 class SerialCompiler(BytecodeCompiler):
@@ -87,23 +79,19 @@ class ParallelCompiler(BytecodeCompiler):
     """Compile a set of Python modules using a pool of workers."""
 
     def __init__(self, workers: int) -> None:
-        from concurrent import futures
+        # The concurrent.futures pools cannot be used as they start workers
+        # on-demand.
+        import multiprocessing
 
-        if sys.version_info >= (3, 14):
-            # Sub-interpreters have less overhead than OS processes.
-            self.pool = futures.InterpreterPoolExecutor(workers)
-        else:
-            self.pool = futures.ProcessPoolExecutor(workers)
+        with _patch_main_module_hack():
+            self.pool = multiprocessing.Pool(workers)
         self.workers = workers
 
     def __call__(self, paths: Iterable[Union[str, Path]]) -> Iterable[CompileResult]:
-        # New workers can be started at any time, so patch until fully done.
-        with _patch_main_module_hack():
-            yield from self.pool.map(_compile_single, paths)
+        yield from self.pool.map(_compile_single, paths)
 
     def __exit__(self, *args: object) -> None:
-        # It's pointless to block on pool finalization, let it occur in background.
-        self.pool.shutdown(wait=False)
+        self.pool.close()
 
 
 def create_bytecode_compiler(
@@ -112,15 +100,10 @@ def create_bytecode_compiler(
 ) -> BytecodeCompiler:
     """Return a bytecode compiler appropriate for the workload and platform.
 
-    Parallelization will only be used if:
-      - There are 2 or more CPUs available
-      - The maximum # of workers permitted is at least 2
-      - There is "enough" code to compile (if known)
-
     A maximum worker count of "auto" will use the number of CPUs available to the
     process or system, up to a hard-coded limit (to avoid resource exhaustion).
 
-    code_size_check is a callable that receives the code size threshold (in # of
+    code_size_check is a callable that receives the code size threshold (in
     bytes) for parallelization and returns whether it will be surpassed or not.
     """
     import logging
@@ -150,15 +133,10 @@ def create_bytecode_compiler(
         return SerialCompiler()
 
     # Case 3: Attempt to initialize a parallelized compiler.
-    # The concurrent executors will spin up new workers on a "on-demand basis",
-    # which helps to avoid wasting time on starting new workers that won't be
-    # used. (** This isn't true for the fork start method, but forking is
-    # fast enough that it doesn't really matter.)
     workers = min(cpus, WORKER_LIMIT) if max_workers == "auto" else max_workers
     try:
-        compiler = ParallelCompiler(workers)
         logger.debug("Bytecode will be compiled using at most %s workers", workers)
-        return compiler
+        return ParallelCompiler(workers)
     except (ImportError, NotImplementedError, OSError) as e:
         # Case 4: multiprocessing is broken, fall back to serial compilation.
         logger.debug("Err! Falling back to serial bytecode compilation", exc_info=e)
