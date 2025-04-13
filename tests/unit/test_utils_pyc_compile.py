@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-from functools import partial
 from pathlib import Path
 from typing import Iterator, Optional, Type
 from unittest.mock import Mock, patch
@@ -7,9 +6,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pytest import param  # noqa: PT013
 
-from pip._internal.utils import pyc_compile
 from pip._internal.utils.pyc_compile import (
-    BytecodeCompiler,
     ParallelCompiler,
     SerialCompiler,
     _compile_single,
@@ -17,7 +14,6 @@ from pip._internal.utils.pyc_compile import (
 )
 
 try:
-    import concurrent.futures
     import multiprocessing
 except (OSError, NotImplementedError, ImportError):
     parallel_supported = False
@@ -40,8 +36,7 @@ def force_spawn_method() -> Iterator[None]:
     """Force the use of the spawn method to suppress thread-safety warnings."""
     if parallel_supported:
         ctx = multiprocessing.get_context("spawn")
-        wrapped = partial(concurrent.futures.ProcessPoolExecutor, mp_context=ctx)
-        with patch.object(concurrent.futures, "ProcessPoolExecutor", wrapped):
+        with patch.object(multiprocessing, "Pool", ctx.Pool):
             yield
 
 
@@ -64,8 +59,7 @@ class TestCompileSingle:
 
         result = _compile_single(source_file)
         assert not result.is_success
-        assert result.compile_output.strip()
-        assert "SyntaxError" in result.compile_output
+        assert "SyntaxError" in result.compile_output.strip()
 
         stdout, stderr = capsys.readouterr()
         assert not stdout, "output should be captured"
@@ -132,9 +126,7 @@ class TestCompilerSelection:
         "cpus, expected_type",
         [(None, SerialCompiler), (1, SerialCompiler), (2, ParallelCompiler)],
     )
-    def test_cpu_count(
-        self, cpus: Optional[int], expected_type: Type[BytecodeCompiler]
-    ) -> None:
+    def test_cpu_count(self, cpus: Optional[int], expected_type: Type[object]) -> None:
         with patch_cpu_count(cpus):
             compiler = create_bytecode_compiler()
         assert isinstance(compiler, expected_type)
@@ -148,18 +140,11 @@ class TestCompilerSelection:
         assert compiler.workers == 8
 
     def test_broken_multiprocessing(self) -> None:
-        fake_module = Mock()
-        fake_module.ProcessPoolExecutor = Mock(side_effect=NotImplementedError)
-        fake_module.InterpreterPoolExecutor = Mock(side_effect=NotImplementedError)
-        with (
-            patch("concurrent.futures", fake_module),
-            patch.object(
-                pyc_compile, "ParallelCompiler", wraps=ParallelCompiler
-            ) as parallel_mock,
-        ):
+        fake_pool = Mock(side_effect=NotImplementedError)
+        with patch.object(multiprocessing, "Pool", fake_pool):
             compiler = create_bytecode_compiler(max_workers=2)
         assert isinstance(compiler, SerialCompiler)
-        parallel_mock.assert_called_once()
+        fake_pool.assert_called_once()
 
     def test_only_one_worker(self) -> None:
         with patch_cpu_count(2):

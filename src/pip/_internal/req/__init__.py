@@ -2,7 +2,7 @@ import collections
 import logging
 from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Generator, Iterable, List, Optional, Sequence, Tuple
+from typing import Generator, List, Optional, Sequence, Tuple
 from zipfile import ZipFile
 
 from pip._internal.cli.progress_bars import get_install_progress_renderer
