@@ -24,9 +24,9 @@ WORKER_LIMIT = 8
 def _patch_main_module_hack() -> Iterator[None]:
     """Temporarily replace __main__ to reduce worker startup overhead.
 
-    concurrent.futures imports the __main__ module while initializing new
-    workers (so global state is persisted). Unfortunately, when pip is
-    invoked via a console script, the wrapper unconditionally imports
+    multiprocessing imports the main module while starting new workers
+    (so global state is persisted). Unfortunately, when pip is invoked
+    via a console script, the wrapper unconditionally imports
     pip._internal.cli.main and its dependencies. This is *slow*.
 
     The compilation code does not depend on this, so avoid the costly
@@ -80,7 +80,7 @@ class ParallelCompiler(BytecodeCompiler):
 
     def __init__(self, workers: int) -> None:
         # The concurrent.futures pools cannot be used as they start workers
-        # on-demand.
+        # on-demand and may perform imports at any time which is a security risk.
         import multiprocessing
 
         with _patch_main_module_hack():
@@ -129,15 +129,14 @@ def create_bytecode_compiler(
 
     # Case 2: There isn't enough code for parallelization to be worth it.
     if code_size_check is not None and not code_size_check(CODE_SIZE_THRESHOLD):
-        logger.debug("Bytecode will be compiled serially (not enough .py code)")
+        logger.debug("Bytecode will be compiled serially (not enough Python code)")
         return SerialCompiler()
 
-    # Case 3: Attempt to initialize a parallelized compiler.
+    # Case 3: Attempt to use parallelization, but fall back if it's unsupported.
     workers = min(cpus, WORKER_LIMIT) if max_workers == "auto" else max_workers
     try:
-        logger.debug("Bytecode will be compiled using at most %s workers", workers)
+        logger.debug("Bytecode will be compiled using %s workers", workers)
         return ParallelCompiler(workers)
     except (ImportError, NotImplementedError, OSError) as e:
-        # Case 4: multiprocessing is broken, fall back to serial compilation.
-        logger.debug("Err! Falling back to serial bytecode compilation", exc_info=e)
+        logger.debug("Falling back to serial bytecode compilation", exc_info=e)
         return SerialCompiler()
