@@ -11,7 +11,6 @@ from pip._internal.models.link import Link
 from pip._internal.network.download import (
     Downloader,
     _get_http_response_size,
-    _http_get_download,
     _prepare_download,
     parse_content_disposition,
     sanitize_content_filename,

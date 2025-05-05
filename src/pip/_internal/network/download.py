@@ -131,30 +131,6 @@ def _get_http_response_filename(resp: Response, link: Link) -> str:
     return filename
 
 
-def _http_get_download(
-    session: PipSession,
-    link: Link,
-    range_start: Optional[int] = 0,
-    if_range: Optional[str] = None,
-) -> Response:
-    target_url = link.url.split("#", 1)[0]
-    headers = HEADERS.copy()
-    # request a partial download
-    if range_start:
-        headers["Range"] = f"bytes={range_start}-"
-    # make sure the file hasn't changed
-    if if_range:
-        headers["If-Range"] = if_range
-    try:
-        resp = session.get(target_url, headers=headers, stream=True)
-        raise_for_status(resp)
-    except NetworkConnectionError as e:
-        assert e.response is not None
-        logger.critical("HTTP error %s while getting %s", e.response.status_code, link)
-        raise
-    return resp
-
-
 class Downloader:
     def __init__(
         self, session: PipSession, progress_bar: str, resume_retries: int
@@ -197,8 +173,7 @@ class _FileDownloader:
         """Download the file given by link into location."""
         assert not hasattr(self, "link"), "file downloader already used"
         self.link = link
-
-        resp = _http_get_download(self._session, link)
+        resp = self._request_download_response()
         self.file_length = _get_http_response_size(resp)
 
         filepath = os.path.join(location, _get_http_response_filename(resp, link))
@@ -213,6 +188,30 @@ class _FileDownloader:
     def _is_incomplete(self) -> bool:
         return bool(self.file_length and self.bytes_received < self.file_length)
 
+    def _request_download_response(
+        self, allow_range: bool = False, if_range: Optional[str] = None
+    ) -> Response:
+        target_url = self.link.url.split("#", 1)[0]
+        headers = HEADERS.copy()
+        if allow_range:
+            # If the download has already started, request a partial download.
+            if start_at := self.bytes_received:
+                headers["Range"] = f"bytes={start_at}-"
+            # If the last download Etag or Last-Modified value is known, use it
+            # to avoid downloading different files.
+            if if_range:
+                headers["If-Range"] = if_range
+        try:
+            resp = self._session.get(target_url, headers=headers, stream=True)
+            raise_for_status(resp)
+        except NetworkConnectionError as e:
+            assert e.response is not None
+            status_code = e.response.status_code
+            logger.critical("HTTP error %s while getting %s", status_code, self.link)
+            raise
+
+        return resp
+
     def _process_response(self, resp: Response) -> None:
         """Process the response and write the chunks to the file."""
         chunks = _prepare_download(
@@ -222,7 +221,6 @@ class _FileDownloader:
             self.file_length,
             range_start=self.bytes_received,
         )
-
         try:
             for chunk in chunks:
                 self.bytes_received += len(chunk)
@@ -250,11 +248,8 @@ class _FileDownloader:
             etag_or_last_modified = _get_http_response_etag_or_last_modified(resp)
             try:
                 # Try to resume the download using a HTTP range request.
-                resume_resp = _http_get_download(
-                    self._session,
-                    self.link,
-                    range_start=self.bytes_received,
-                    if_range=etag_or_last_modified,
+                resume_resp = self._request_download_response(
+                    allow_range=True, if_range=etag_or_last_modified
                 )
                 # Fallback: if the server responded with 200 (i.e., the file has
                 # since been modified or range requests are unsupported) or any
