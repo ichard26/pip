@@ -38,7 +38,7 @@ def _get_http_response_etag_or_last_modified(resp: Response) -> Optional[str]:
     return resp.headers.get("etag", resp.headers.get("last-modified"))
 
 
-def _prepare_download(
+def _log_download(
     resp: Response,
     link: Link,
     progress_bar: str,
@@ -173,13 +173,13 @@ class Downloader:
     def batch(
         self, links: Iterable[Link], location: str
     ) -> Iterable[Tuple[Link, Tuple[str, str]]]:
-        """Download the files given by links into location."""
+        """Convenience method to download multiple links."""
         for link in links:
             filepath, content_type = self(link, location)
             yield link, (filepath, content_type)
 
     def __call__(self, link: Link, location: str) -> Tuple[str, str]:
-        """Download the file given by link into location."""
+        """Download a link and save it under location."""
         resp = self._http_get(link)
         download_size = _get_http_response_size(resp)
 
@@ -188,14 +188,14 @@ class Downloader:
             download = _FileDownload(link, content_file, download_size)
             self._process_response(download, resp)
             if download.is_incomplete():
-                self._attempt_resume(download, resp)
+                self._attempt_resumes_or_redownloads(download, resp)
 
         content_type = resp.headers.get("Content-Type", "")
         return filepath, content_type
 
     def _process_response(self, download: _FileDownload, resp: Response) -> None:
-        """Process the response and write the chunks to the file."""
-        chunks = _prepare_download(
+        """Download and save chunks from a response."""
+        chunks = _log_download(
             resp,
             download.link,
             self._progress_bar,
@@ -212,8 +212,10 @@ class Downloader:
 
             logger.warning("Connection timed out while downloading.")
 
-    def _attempt_resume(self, download: _FileDownload, resp: Response) -> None:
-        """Attempt to resume the download if connection was dropped."""
+    def _attempt_resumes_or_redownloads(
+        self, download: _FileDownload, resp: Response
+    ) -> None:
+        """Attempt to resume/restart the download if connection was dropped."""
 
         while download.reattempts < self._resume_retries and download.is_incomplete():
             assert download.size is not None
@@ -248,6 +250,8 @@ class Downloader:
         self, download: _FileDownload, should_match: Response
     ) -> Response:
         """Issue a HTTP range request to resume the download."""
+        # To better understand the download resumption logic, see the mdn web docs:
+        # https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Range_requests
         headers = HEADERS.copy()
         headers["Range"] = f"bytes={download.bytes_received}-"
         # If possible, use a conditional range request to avoid corrupted
