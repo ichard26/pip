@@ -177,7 +177,7 @@ class _FileDownloader:
         """Download the link and save it under location."""
         assert not hasattr(self, "link"), "file downloader already used"
         self.link = link
-        resp = self._request_download_response()
+        resp = self._request_download()
         self.file_length = _get_http_response_size(resp)
 
         filepath = os.path.join(location, _get_http_response_filename(resp, link))
@@ -192,11 +192,11 @@ class _FileDownloader:
     def _is_incomplete(self) -> bool:
         return bool(self.file_length and self.bytes_received < self.file_length)
 
-    def _request_download_response(
-        self, allow_range: bool = False, if_range: Optional[str] = None
+    def _request_download(
+        self, allow_range: bool = False, must_match: Optional[Response] = None
     ) -> Response:
         """Issue a GET request to start downloading chunks."""
-        target_url = self.link.url.split("#", 1)[0]
+        target_url = self.link.url_without_fragment
         headers = HEADERS.copy()
         if allow_range:
             # If the download has already started, request a partial download.
@@ -204,8 +204,8 @@ class _FileDownloader:
                 headers["Range"] = f"bytes={start_at}-"
             # If possible, use a conditional range request to avoid corrupted
             # downloads caused by the remote file changing in-between.
-            if if_range:
-                headers["If-Range"] = if_range
+            if identifier := _get_http_response_etag_or_last_modified(must_match):
+                headers["If-Range"] = identifier
         try:
             resp = self._session.get(target_url, headers=headers, stream=True)
             raise_for_status(resp)
@@ -250,12 +250,9 @@ class _FileDownloader:
             )
             self.resumes_left -= 1
 
-            etag_or_last_modified = _get_http_response_etag_or_last_modified(resp)
             try:
                 # Try to resume the download using a HTTP range request.
-                resume_resp = self._request_download_response(
-                    allow_range=True, if_range=etag_or_last_modified
-                )
+                resume_resp = self._request_download(allow_range=True, must_match=resp)
                 # Fallback: if the server responded with 200 (i.e., the file has
                 # since been modified or range requests are unsupported) or any
                 # other unexpected status, restart the download from the beginning.
