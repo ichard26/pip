@@ -158,7 +158,7 @@ def _http_get_download(
 
 @dataclass
 class _FileDownload:
-    """Stores the state of a single file download."""
+    """Stores the state of a single link download."""
 
     link: Link
     output_file: BinaryIO
@@ -173,7 +173,7 @@ class _FileDownload:
         self.bytes_received += len(data)
         self.output_file.write(data)
 
-    def reset_download(self) -> None:
+    def reset_file(self) -> None:
         """Delete any saved data and reset progress to zero."""
         self.output_file.seek(0)
         self.output_file.truncate()
@@ -226,12 +226,6 @@ class Downloader:
             download.size,
             range_start=download.bytes_received,
         )
-        self._write_chunks_to_file(download, chunks)
-
-    def _write_chunks_to_file(
-        self, download: _FileDownload, chunks: Iterable[bytes]
-    ) -> None:
-        """Write the chunks to the file and return the number of bytes received."""
         try:
             for chunk in chunks:
                 download.write_chunk(chunk)
@@ -270,8 +264,10 @@ class Downloader:
                 # other unexpected status, restart the download from the beginning.
                 must_restart = resume_resp.status_code != HTTPStatus.PARTIAL_CONTENT
                 if must_restart:
-                    download.size, etag_or_last_modified = self._reset_download_state(
-                        download, resume_resp
+                    download.reset_file()
+                    download.size = _get_http_response_size(resume_resp)
+                    etag_or_last_modified = _get_http_response_etag_or_last_modified(
+                        resume_resp
                     )
 
                 self._process_response(download, resume_resp)
@@ -282,13 +278,3 @@ class Downloader:
         if download.is_incomplete():
             os.remove(download.output_file.name)
             raise IncompleteDownloadError(download)
-
-    def _reset_download_state(
-        self, download: _FileDownload, resp: Response
-    ) -> Tuple[Optional[int], Optional[str]]:
-        """Reset the download state to restart downloading from the beginning."""
-        download.reset_download()
-        total_length = _get_http_response_size(resp)
-        etag_or_last_modified = _get_http_response_etag_or_last_modified(resp)
-
-        return total_length, etag_or_last_modified
