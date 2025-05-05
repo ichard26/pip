@@ -4,6 +4,7 @@ import email.message
 import logging
 import mimetypes
 import os
+from dataclasses import dataclass
 from http import HTTPStatus
 from typing import BinaryIO, Iterable, Optional, Tuple
 
@@ -37,7 +38,7 @@ def _get_http_response_etag_or_last_modified(resp: Response) -> Optional[str]:
     return resp.headers.get("etag", resp.headers.get("last-modified"))
 
 
-def _prepare_download(
+def _log_download(
     resp: Response,
     link: Link,
     progress_bar: str,
@@ -131,34 +132,37 @@ def _get_http_response_filename(resp: Response, link: Link) -> str:
     return filename
 
 
+@dataclass(frozen=True)
 class Downloader:
-    def __init__(
-        self, session: PipSession, progress_bar: str, resume_retries: int
-    ) -> None:
-        assert resume_retries >= 0, "retries must be bigger or equal to zero"
-        self._session = session
-        self._progress_bar = progress_bar
-        self._resume_retries = resume_retries
+    session: PipSession
+    progress_bar: str
+    resume_retries: int
 
     def batch(
         self, links: Iterable[Link], location: str
     ) -> Iterable[Tuple[Link, Tuple[str, str]]]:
-        """Download the files given by links into location."""
+        """Convenience method to download multiple links."""
         for link in links:
             filepath, content_type = self(link, location)
             yield link, (filepath, content_type)
 
     def __call__(self, link: Link, location: str) -> Tuple[str, str]:
-        file_downloader = _FileDownloader(
-            self._session, self._progress_bar, self._resume_retries
-        )
-        return file_downloader.download(link, location)
+        """Download a link and save it under location."""
+        return _FileDownloader(
+            self.session, self.progress_bar, self.resume_retries
+        ).download(link, location)
 
 
 class _FileDownloader:
+    """Single-use helper for downloading a single link."""
+
+    # To better understand the download resumption logic, see the mdn web docs:
+    # https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Range_requests
+
     def __init__(
         self, session: PipSession, progress_bar: str, resume_retries: int
     ) -> None:
+        assert resume_retries >= 0, "retries must be bigger or equal to zero"
         self._session = session
         self._progress_bar = progress_bar
         self._resume_retries = resume_retries
@@ -170,7 +174,7 @@ class _FileDownloader:
         self.resumes_left = resume_retries
 
     def download(self, link: Link, location: str) -> Tuple[str, str]:
-        """Download the file given by link into location."""
+        """Download the link and save it under location."""
         assert not hasattr(self, "link"), "file downloader already used"
         self.link = link
         resp = self._request_download_response()
@@ -191,14 +195,15 @@ class _FileDownloader:
     def _request_download_response(
         self, allow_range: bool = False, if_range: Optional[str] = None
     ) -> Response:
+        """Issue a GET request to start downloading chunks."""
         target_url = self.link.url.split("#", 1)[0]
         headers = HEADERS.copy()
         if allow_range:
             # If the download has already started, request a partial download.
             if start_at := self.bytes_received:
                 headers["Range"] = f"bytes={start_at}-"
-            # If the last download Etag or Last-Modified value is known, use it
-            # to avoid downloading different files.
+            # If possible, use a conditional range request to avoid corrupted
+            # downloads caused by the remote file changing in-between.
             if if_range:
                 headers["If-Range"] = if_range
         try:
@@ -213,8 +218,8 @@ class _FileDownloader:
         return resp
 
     def _process_response(self, resp: Response) -> None:
-        """Process the response and write the chunks to the file."""
-        chunks = _prepare_download(
+        """Download and save chunks from a response."""
+        chunks = _log_download(
             resp,
             self.link,
             self._progress_bar,
@@ -233,7 +238,7 @@ class _FileDownloader:
             logger.warning("Connection timed out while downloading.")
 
     def _attempt_resumes_or_redownloads(self, resp: Response) -> None:
-        """Attempt to resume the download if connection was dropped."""
+        """Attempt to resume/restart the download if connection was dropped."""
 
         while self.resumes_left and self._is_incomplete():
             assert self.file_length is not None
