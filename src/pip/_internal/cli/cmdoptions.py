@@ -161,8 +161,7 @@ require_virtualenv: Callable[..., Option] = partial(
     action="store_true",
     default=False,
     help=(
-        "Allow pip to only run in a virtual environment; "
-        "exit with an error otherwise."
+        "Allow pip to only run in a virtual environment; exit with an error otherwise."
     ),
 )
 

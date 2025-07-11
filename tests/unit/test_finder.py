@@ -325,9 +325,9 @@ def test_finder_priority_file_over_page(data: TestData) -> None:
     all_versions = finder.find_all_candidates(name)
     # 1 file InstallationCandidate followed by all https ones
     assert all_versions[0].link.scheme == "file"
-    assert all(
-        version.link.scheme == "https" for version in all_versions[1:]
-    ), all_versions
+    assert all(version.link.scheme == "https" for version in all_versions[1:]), (
+        all_versions
+    )
 
     found = finder.find_requirement(req, False)
     assert found is not None

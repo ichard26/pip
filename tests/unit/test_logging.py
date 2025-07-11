@@ -59,8 +59,7 @@ class TestIndentingFormatter:
             ("INFO", "2019-01-17T06:00:37,040 hello\n2019-01-17T06:00:37,040 world"),
             (
                 "WARNING",
-                "2019-01-17T06:00:37,040 WARNING: hello\n"
-                "2019-01-17T06:00:37,040 world",
+                "2019-01-17T06:00:37,040 WARNING: hello\n2019-01-17T06:00:37,040 world",
             ),
         ],
     )

@@ -57,9 +57,7 @@ class TestDecideUserInstall:
             OSError(errno.EACCES, "No file permission"),
             True,
             True,
-            "Could"
-            " not install packages due to an OSError.\nCheck the"
-            " permissions.\n",
+            "Could not install packages due to an OSError.\nCheck the permissions.\n",
         ),
         # show_traceback = True, using_user_site = False
         (
@@ -81,9 +79,7 @@ class TestDecideUserInstall:
             OSError("Illegal byte sequence"),
             False,
             True,
-            "Could not"
-            " install packages due to an OSError: Illegal byte"
-            " sequence\n",
+            "Could not install packages due to an OSError: Illegal byte sequence\n",
         ),
         (
             OSError(errno.EACCES, "No file permission"),
@@ -98,9 +94,7 @@ class TestDecideUserInstall:
             OSError("Illegal byte sequence"),
             False,
             False,
-            "Could not"
-            " install packages due to an OSError: Illegal byte sequence"
-            "\n",
+            "Could not install packages due to an OSError: Illegal byte sequence\n",
         ),
         (
             OSError(errno.EACCES, "No file permission"),

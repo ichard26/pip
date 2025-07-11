@@ -188,8 +188,7 @@ def test_schema_check_in_requirements_file(script: PipTestEnvironment) -> None:
     """
     script.scratch_path.joinpath("file-egg-req.txt").write_text(
         "\n{}\n".format(
-            "git://github.com/alex/django-fixture-generator.git"
-            "#egg=fixture_generator"
+            "git://github.com/alex/django-fixture-generator.git#egg=fixture_generator"
         )
     )
 
@@ -366,15 +365,15 @@ def test_respect_order_in_requirements_file(
 
     downloaded = [line for line in result.stdout.split("\n") if "Processing" in line]
 
-    assert (
-        "parent" in downloaded[0]
-    ), f'First download should be "parent" but was "{downloaded[0]}"'
-    assert (
-        "child" in downloaded[1]
-    ), f'Second download should be "child" but was "{downloaded[1]}"'
-    assert (
-        "simple" in downloaded[2]
-    ), f'Third download should be "simple" but was "{downloaded[2]}"'
+    assert "parent" in downloaded[0], (
+        f'First download should be "parent" but was "{downloaded[0]}"'
+    )
+    assert "child" in downloaded[1], (
+        f'Second download should be "child" but was "{downloaded[1]}"'
+    )
+    assert "simple" in downloaded[2], (
+        f'Third download should be "simple" but was "{downloaded[2]}"'
+    )
 
 
 def test_install_local_editable_with_extras(
@@ -817,8 +816,7 @@ def test_install_unsupported_wheel_link_with_marker(script: PipTestEnvironment) 
     result = script.pip("install", "-r", script.scratch_path / "with-marker.txt")
 
     assert (
-        "Ignoring asdf: markers 'sys_platform == \"xyz\"' don't match "
-        "your environment"
+        "Ignoring asdf: markers 'sys_platform == \"xyz\"' don't match your environment"
     ) in result.stdout
     assert len(result.files_created) == 0
 

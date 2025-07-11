@@ -93,9 +93,9 @@ def _assert_hook_called_with_config_settings(
 ) -> None:
     log = project_dir.joinpath("log.txt").read_text()
     assert f":{hook} called" in log, f"{hook} has not been called"
-    assert (
-        f":{hook} called with config_settings={config_settings}" in log
-    ), f"{hook} has not been called with the expected config settings:\n{log}"
+    assert f":{hook} called with config_settings={config_settings}" in log, (
+        f"{hook} has not been called with the expected config settings:\n{log}"
+    )
 
 
 def _assert_hook_not_called(project_dir: Path, hook: str) -> None:

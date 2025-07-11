@@ -30,9 +30,9 @@ def assert_editable(script: PipTestEnvironment, *args: str) -> None:
         f"{canonicalize_name(p.stem)}.egg-link"
         for p in script.site_packages_path.glob("*.egg-link")
     }
-    assert (
-        egg_links <= actual_egg_links
-    ), f"{args!r} not all found in {script.site_packages_path!r}"
+    assert egg_links <= actual_egg_links, (
+        f"{args!r} not all found in {script.site_packages_path!r}"
+    )
 
 
 @pytest.fixture
@@ -411,9 +411,8 @@ def test_new_resolver_requires_python_error(script: PipTestEnvironment) -> None:
         expect_error=True,
     )
 
-    message = (
-        "Package 'base' requires a different Python: "
-        "{}.{}.{} not in '<2'".format(*sys.version_info[:3])
+    message = "Package 'base' requires a different Python: {}.{}.{} not in '<2'".format(
+        *sys.version_info[:3]
     )
     assert message in result.stderr, str(result)
 
@@ -1168,9 +1167,8 @@ def test_new_resolver_no_deps_checks_requires_python(
         expect_error=True,
     )
 
-    message = (
-        "Package 'base' requires a different Python: "
-        "{}.{}.{} not in '<2'".format(*sys.version_info[:3])
+    message = "Package 'base' requires a different Python: {}.{}.{} not in '<2'".format(
+        *sys.version_info[:3]
     )
     assert message in result.stderr
 
@@ -2381,19 +2379,19 @@ def test_new_resolver_dont_backtrack_on_conflicting_constraints_on_extras(
         *(to_install if not swap_order else reversed(to_install)),
         expect_error=True,
     )
-    assert (
-        "pkg-2.0" not in result.stdout or "pkg-1.0" not in result.stdout
-    ), "Should only try one of 1.0, 2.0 depending on order"
+    assert "pkg-2.0" not in result.stdout or "pkg-1.0" not in result.stdout, (
+        "Should only try one of 1.0, 2.0 depending on order"
+    )
     assert "Reporter.starting()" in result.stdout, (
         "This should never fail unless the debug reporting format has changed,"
         " in which case the other assertions in this test need to be reviewed."
     )
-    assert (
-        "Reporter.rejecting_candidate" not in result.stdout
-    ), "Should be able to conclude conflict before even selecting a candidate"
-    assert (
-        "conflict is caused by" in result.stdout
-    ), "Resolver should be trivially able to find conflict cause"
+    assert "Reporter.rejecting_candidate" not in result.stdout, (
+        "Should be able to conclude conflict before even selecting a candidate"
+    )
+    assert "conflict is caused by" in result.stdout, (
+        "Resolver should be trivially able to find conflict cause"
+    )
 
 
 def test_new_resolver_respect_user_requested_if_extra_is_installed(

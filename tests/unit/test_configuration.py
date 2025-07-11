@@ -40,9 +40,9 @@ class TestConfigurationLoading(ConfigurationMixin):
             monkeypatch.setenv("PIP_CONFIG_FILE", config_file)
 
             self.configuration.load()
-            assert (
-                self.configuration.get_value("test.hello") == "4"
-            ), self.configuration._config
+            assert self.configuration.get_value("test.hello") == "4", (
+                self.configuration._config
+            )
 
     def test_environment_var_loading(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PIP_HELLO", "5")
@@ -237,9 +237,12 @@ class TestConfigurationModification(ConfigurationMixin):
 
         # get the path to user config file
         assert mymock.call_count == 1
-        assert mymock.call_args[0][0] == (
-            # Use new config file
-            get_configuration_files()[kinds.USER][1]
+        assert (
+            mymock.call_args[0][0]
+            == (
+                # Use new config file
+                get_configuration_files()[kinds.USER][1]
+            )
         )
 
     def test_global_modification(self) -> None:

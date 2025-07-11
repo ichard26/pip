@@ -668,8 +668,7 @@ def test_link_hash_pass_require_hashes(
     considered valid for --require-hashes."""
     url = path_to_url(str(shared_data.packages.joinpath("simple-1.0.tar.gz")))
     url = (
-        f"{url}#sha256="
-        "393043e672415891885c9a2a0929b1af95fb866d6ca016b42d2e6ce53619b653"
+        f"{url}#sha256=393043e672415891885c9a2a0929b1af95fb866d6ca016b42d2e6ce53619b653"
     )
     script.pip_install_local("--no-deps", "--require-hashes", url)
 
@@ -1501,9 +1500,9 @@ def test_install_package_that_emits_unicode(
         expect_temp=True,
         quiet=True,
     )
-    assert (
-        "FakeError: this package designed to fail on install" in result.stderr
-    ), f"stderr: {result.stderr}"
+    assert "FakeError: this package designed to fail on install" in result.stderr, (
+        f"stderr: {result.stderr}"
+    )
     assert "UnicodeDecodeError" not in result.stderr
     assert "UnicodeDecodeError" not in result.stdout
 

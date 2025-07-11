@@ -320,8 +320,8 @@ class InstallCommand(RequirementCommand):
             options.target_dir = os.path.abspath(options.target_dir)
             if (
                 # fmt: off
-                os.path.exists(options.target_dir) and
-                not os.path.isdir(options.target_dir)
+                os.path.exists(options.target_dir)
+                and not os.path.isdir(options.target_dir)
                 # fmt: on
             ):
                 raise CommandError(
@@ -723,8 +723,7 @@ def decide_user_install(
         return False
 
     logger.info(
-        "Defaulting to user installation because normal site-packages "
-        "is not writeable"
+        "Defaulting to user installation because normal site-packages is not writeable"
     )
     return True
 

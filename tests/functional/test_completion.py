@@ -157,8 +157,7 @@ def autocomplete(
         result = autocomplete_script.run(
             "python",
             "-c",
-            "from pip._internal.cli.autocompletion import autocomplete;"
-            "autocomplete()",
+            "from pip._internal.cli.autocompletion import autocomplete;autocomplete()",
             expect_error=expect_error,
             cwd=cwd,
         )
@@ -196,7 +195,7 @@ def test_completion_alone(autocomplete_script: PipTestEnvironment) -> None:
     assert (
         "ERROR: You must pass --bash or --fish or --powershell or --zsh"
         in result.stderr
-    ), ("completion alone failed -- " + result.stderr)
+    ), "completion alone failed -- " + result.stderr
 
 
 def test_completion_for_un_snippet(autocomplete: DoAutocomplete) -> None:
@@ -233,9 +232,9 @@ def test_completion_short_option(autocomplete: DoAutocomplete) -> None:
 
     res, env = autocomplete("pip -", "1")
 
-    assert (
-        "-h" in res.stdout.split()
-    ), "autocomplete function could not complete short options after ``-``"
+    assert "-h" in res.stdout.split(), (
+        "autocomplete function could not complete short options after ``-``"
+    )
 
 
 def test_completion_short_option_for_command(autocomplete: DoAutocomplete) -> None:
@@ -246,9 +245,9 @@ def test_completion_short_option_for_command(autocomplete: DoAutocomplete) -> No
 
     res, env = autocomplete("pip search -", "2")
 
-    assert (
-        "-h" in res.stdout.split()
-    ), "autocomplete function could not complete short options after ``-``"
+    assert "-h" in res.stdout.split(), (
+        "autocomplete function could not complete short options after ``-``"
+    )
 
 
 def test_completion_files_after_option(
@@ -263,26 +262,23 @@ def test_completion_files_after_option(
         cword="3",
         cwd=data.completion_paths,
     )
-    assert (
-        "requirements.txt" in res.stdout
-    ), "autocomplete function could not complete <file> after options in command"
-    assert (
-        os.path.join("resources", "") in res.stdout
-    ), "autocomplete function could not complete <dir> after options in command"
+    assert "requirements.txt" in res.stdout, (
+        "autocomplete function could not complete <file> after options in command"
+    )
+    assert os.path.join("resources", "") in res.stdout, (
+        "autocomplete function could not complete <dir> after options in command"
+    )
     assert not any(
         out in res.stdout for out in (os.path.join("REPLAY", ""), "README.txt")
-    ), (
-        "autocomplete function completed <file> or <dir> that "
-        "should not be completed"
-    )
+    ), "autocomplete function completed <file> or <dir> that should not be completed"
     if sys.platform != "win32":
         return
-    assert (
-        "readme.txt" in res.stdout
-    ), "autocomplete function could not complete <file> after options in command"
-    assert (
-        os.path.join("replay", "") in res.stdout
-    ), "autocomplete function could not complete <dir> after options in command"
+    assert "readme.txt" in res.stdout, (
+        "autocomplete function could not complete <file> after options in command"
+    )
+    assert os.path.join("replay", "") in res.stdout, (
+        "autocomplete function could not complete <dir> after options in command"
+    )
 
 
 def test_completion_not_files_after_option(
@@ -364,17 +360,17 @@ def test_completion_directories_after_option(
         cword="2",
         cwd=data.completion_paths,
     )
-    assert (
-        os.path.join("resources", "") in res.stdout
-    ), "autocomplete function could not complete <dir> after options"
+    assert os.path.join("resources", "") in res.stdout, (
+        "autocomplete function could not complete <dir> after options"
+    )
     assert not any(
         out in res.stdout
         for out in ("requirements.txt", "README.txt", os.path.join("REPLAY", ""))
     ), "autocomplete function completed <dir> when it should not complete"
     if sys.platform == "win32":
-        assert (
-            os.path.join("replay", "") in res.stdout
-        ), "autocomplete function could not complete <dir> after options"
+        assert os.path.join("replay", "") in res.stdout, (
+            "autocomplete function could not complete <dir> after options"
+        )
 
 
 def test_completion_subdirectories_after_option(

@@ -140,7 +140,11 @@ def update_version_file(version: str, filepath: str) -> None:
 def create_git_tag(session: Session, tag_name: str, *, message: str) -> None:
     session.run(
         # fmt: off
-        "git", "tag", "-m", message, tag_name,
+        "git",
+        "tag",
+        "-m",
+        message,
+        tag_name,
         # fmt: on
         external=True,
         silent=True,
@@ -206,12 +210,17 @@ def isolated_temporary_checkout(
         git_checkout_dir = tmp_dir / f"pip-build-{target_ref}"
         nox_session.run(
             # fmt: off
-            "git", "clone",
-            "--depth", "1",
-            "--config", "core.autocrlf=false",
-            "--branch", str(target_ref),
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--config",
+            "core.autocrlf=false",
+            "--branch",
+            str(target_ref),
             "--",
-            ".", str(git_checkout_dir),
+            ".",
+            str(git_checkout_dir),
             # fmt: on
             external=True,
             silent=True,
@@ -224,9 +233,13 @@ def get_git_untracked_files() -> Iterator[str]:
     """List all local file paths that aren't tracked by Git."""
     git_ls_files_cmd = (
         # fmt: off
-        "git", "ls-files",
-        "--ignored", "--exclude-standard",
-        "--others", "--", ".",
+        "git",
+        "ls-files",
+        "--ignored",
+        "--exclude-standard",
+        "--others",
+        "--",
+        ".",
         # fmt: on
     )
     # session.run doesn't seem to return any output:

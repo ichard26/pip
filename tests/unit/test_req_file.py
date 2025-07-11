@@ -371,7 +371,7 @@ class TestProcessLine:
         req_file_count = 4
         for i in range(req_file_count):
             req_file = tmpdir / f"{i}.txt"
-            req_file.write_text(f"-r {(i+1) % req_file_count}.txt")
+            req_file.write_text(f"-r {(i + 1) % req_file_count}.txt")
             req_files.append(req_file)
 
         # When the passed requirements file recursively references itself
@@ -823,9 +823,9 @@ class TestParseRequirements:
 
             assert len(reqs) == 1, "parsing requirement file with env variable failed"
             assert reqs[0].link is not None
-            assert (
-                reqs[0].link.url == req_url
-            ), "ignoring invalid env variable in req file failed"
+            assert reqs[0].link.url == req_url, (
+                "ignoring invalid env variable in req file failed"
+            )
 
     def test_join_lines(self, tmpdir: Path, finder: PackageFinder) -> None:
         with open(tmpdir.joinpath("req1.txt"), "w") as fp:

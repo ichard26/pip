@@ -8,8 +8,7 @@ from tests.lib import PipTestEnvironment
 def test_basic_hash(script: PipTestEnvironment, tmpdir: Path) -> None:
     """Run 'pip hash' through its default behavior."""
     expected = (
-        "--hash=sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425"
-        "e73043362938b9824"
+        "--hash=sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
     )
     result = script.pip("hash", _hello_file(tmpdir))
     assert expected in str(result)

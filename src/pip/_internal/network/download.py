@@ -169,9 +169,9 @@ class Downloader:
         progress_bar: BarType,
         resume_retries: int,
     ) -> None:
-        assert (
-            resume_retries >= 0
-        ), "Number of max resume retries must be bigger or equal to zero"
+        assert resume_retries >= 0, (
+            "Number of max resume retries must be bigger or equal to zero"
+        )
         self._session = session
         self._progress_bar = progress_bar
         self._resume_retries = resume_retries
@@ -280,9 +280,9 @@ class Downloader:
             return
 
         # Check SafeFileCache is being used
-        assert isinstance(
-            adapter.cache, SafeFileCache
-        ), "separate body cache not in use!"
+        assert isinstance(adapter.cache, SafeFileCache), (
+            "separate body cache not in use!"
+        )
 
         synthetic_request = PreparedRequest()
         synthetic_request.prepare(method="GET", url=url, headers={})

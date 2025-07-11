@@ -75,8 +75,7 @@ class TestInstallRequirementFrom:
         """
         # Test with a PEP 508 url install string:
         wheel_url = (
-            "https://download.pytorch.org/whl/cu90/"
-            "torch-1.0.0-cp36-cp36m-win_amd64.whl"
+            "https://download.pytorch.org/whl/cu90/torch-1.0.0-cp36-cp36m-win_amd64.whl"
         )
         install_str = "torch@ " + wheel_url
         install_req = install_req_from_req_string(install_str)
@@ -97,8 +96,7 @@ class TestInstallRequirementFrom:
         """
         # Test with a PEP 508 url install string:
         wheel_url = (
-            "https://download.pytorch.org/whl/cu90/"
-            "torch-1.0.0-cp36-cp36m-win_amd64.whl"
+            "https://download.pytorch.org/whl/cu90/torch-1.0.0-cp36-cp36m-win_amd64.whl"
         )
         install_str = "torch@ " + wheel_url
 

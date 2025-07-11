@@ -267,7 +267,9 @@ def test_rmtree_errorhandler_reraises_error(tmpdir: Path) -> None:
             # Tuple[None, None, None]]"; expected "Tuple[Type[BaseException],
             # BaseException, TracebackType]"
             rmtree_errorhandler(
-                mock_func, path, sys.exc_info()  # type: ignore[arg-type]
+                mock_func,
+                path,
+                sys.exc_info(),  # type: ignore[arg-type]
             )
     finally:
         # Restore permissions to let pytest to clean up temp dirs
@@ -393,8 +395,7 @@ class TestHashes:
         hashes = Hashes(
             {
                 "sha256": [
-                    "2cf24dba5fb0a30e26e83b2ac5b9e29e"
-                    "1b161e5c1fa7425e73043362938b9824"
+                    "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
                 ],
                 "sha224": ["wrongwrong"],
                 "md5": ["5d41402abc4b2a76b9719d911017c592"],
