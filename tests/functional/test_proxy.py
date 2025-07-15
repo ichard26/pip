@@ -1,4 +1,3 @@
-import ssl
 from pathlib import Path
 from typing import Any
 
@@ -6,7 +5,7 @@ import proxy
 import pytest
 from proxy.http.proxy import HttpProxyBasePlugin
 
-from tests.conftest import CertFactory
+from tests.conftest import CertSSLContextFactory
 from tests.lib import PipTestEnvironment, TestData
 from tests.lib.server import (
     authorization_response,
@@ -49,14 +48,9 @@ def test_proxy_overrides_env(
 def test_proxy_does_not_override_netrc(
     script: PipTestEnvironment,
     data: TestData,
-    cert_factory: CertFactory,
+    cert_ssl_context_factory: CertSSLContextFactory,
 ) -> None:
-    cert_path = cert_factory()
-    ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-    ctx.load_cert_chain(cert_path, cert_path)
-    ctx.load_verify_locations(cafile=cert_path)
-    ctx.verify_mode = ssl.CERT_REQUIRED
-
+    cert_path, ctx = cert_ssl_context_factory()
     server = make_mock_server(ssl_context=ctx)
     server.mock.side_effect = [
         package_page(

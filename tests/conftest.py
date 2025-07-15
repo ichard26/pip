@@ -7,6 +7,7 @@ import http.server
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import threading
@@ -42,6 +43,7 @@ from tests.lib import (
     DATA_DIR,
     SRC_DIR,
     CertFactory,
+    CertSSLContextFactory,
     InMemoryPip,
     PipTestEnvironment,
     ScriptFactory,
@@ -679,6 +681,19 @@ def cert_factory(tmpdir_factory: pytest.TempPathFactory) -> CertFactory:
             f.write(serialize_key(key))
 
         return str(output_path)
+
+    return factory
+
+
+@pytest.fixture
+def cert_ssl_context_factory(cert_factory: CertFactory) -> CertSSLContextFactory:
+    def factory() -> tuple[str, ssl.SSLContext]:
+        cert_path = cert_factory()
+        ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        ctx.load_cert_chain(cert_path, cert_path)
+        ctx.load_verify_locations(cafile=cert_path)
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        return cert_path, ctx
 
     return factory
 

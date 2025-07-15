@@ -4,7 +4,6 @@ import hashlib
 import io
 import os
 import re
-import ssl
 import sys
 import sysconfig
 import tarfile
@@ -21,7 +20,7 @@ from pip._internal.utils.misc import rmtree
 from pip._internal.utils.urls import path_to_url
 
 from tests.lib import (
-    CertFactory,
+    CertSSLContextFactory,
     PipTestEnvironment,
     ResolverVariant,
     TestData,
@@ -2354,15 +2353,10 @@ def test_error_all_yanked_files_and_no_pin(
 def test_install_sends_client_cert(
     install_args: tuple[str, ...],
     script: PipTestEnvironment,
-    cert_factory: CertFactory,
+    cert_ssl_context_factory: CertSSLContextFactory,
     data: TestData,
 ) -> None:
-    cert_path = cert_factory()
-    ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-    ctx.load_cert_chain(cert_path, cert_path)
-    ctx.load_verify_locations(cafile=cert_path)
-    ctx.verify_mode = ssl.CERT_REQUIRED
-
+    cert_path, ctx = cert_ssl_context_factory()
     server = make_mock_server(ssl_context=ctx)
     server.mock.side_effect = [
         package_page(
@@ -2394,15 +2388,11 @@ def test_install_sends_client_cert(
 
 def test_install_sends_certs_for_pep518_deps(
     script: PipTestEnvironment,
-    cert_factory: CertFactory,
+    cert_ssl_context_factory: CertSSLContextFactory,
     data: TestData,
     common_wheels: Path,
 ) -> None:
-    cert_path = cert_factory()
-    ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-    ctx.load_cert_chain(cert_path, cert_path)
-    ctx.load_verify_locations(cafile=cert_path)
-    ctx.verify_mode = ssl.CERT_REQUIRED
+    cert_path, ctx = cert_ssl_context_factory()
 
     setuptools_pkg = next(common_wheels.glob("setuptools*")).name
     server = make_mock_server(ssl_context=ctx)

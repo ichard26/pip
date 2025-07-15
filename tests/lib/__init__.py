@@ -6,6 +6,7 @@ import pathlib
 import re
 import shutil
 import site
+import ssl
 import subprocess
 import sys
 import textwrap
@@ -1365,6 +1366,7 @@ class ScriptFactory(Protocol):
 
 
 CertFactory = Callable[[], str]
+CertSSLContextFactory = Callable[[], tuple[str, ssl.SSLContext]]
 
 # -------------------------------------------------------------------------
 # Accommodations for Windows path and URL changes in recent Python releases

@@ -1,5 +1,4 @@
 import os
-import ssl
 import tempfile
 import textwrap
 from pathlib import Path
@@ -7,7 +6,7 @@ from typing import Callable
 
 import pytest
 
-from tests.lib import CertFactory, PipTestEnvironment, ScriptFactory, TestData
+from tests.lib import CertSSLContextFactory, PipTestEnvironment, ScriptFactory, TestData
 from tests.lib.server import (
     MockServer,
     authorization_response,
@@ -260,17 +259,14 @@ def test_install_no_binary_via_config_disables_cached_wheels(
 
 
 def test_prompt_for_authentication(
-    script: PipTestEnvironment, data: TestData, cert_factory: CertFactory
+    script: PipTestEnvironment,
+    data: TestData,
+    cert_ssl_context_factory: CertSSLContextFactory,
 ) -> None:
     """Test behaviour while installing from a index url
     requiring authentication
     """
-    cert_path = cert_factory()
-    ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-    ctx.load_cert_chain(cert_path, cert_path)
-    ctx.load_verify_locations(cafile=cert_path)
-    ctx.verify_mode = ssl.CERT_REQUIRED
-
+    cert_path, ctx = cert_ssl_context_factory()
     server = make_mock_server(ssl_context=ctx)
     server.mock.side_effect = [
         package_page(
@@ -300,17 +296,14 @@ def test_prompt_for_authentication(
 
 
 def test_do_not_prompt_for_authentication(
-    script: PipTestEnvironment, data: TestData, cert_factory: CertFactory
+    script: PipTestEnvironment,
+    data: TestData,
+    cert_ssl_context_factory: CertSSLContextFactory,
 ) -> None:
     """Test behaviour if --no-input option is given while installing
     from a index url requiring authentication
     """
-    cert_path = cert_factory()
-    ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-    ctx.load_cert_chain(cert_path, cert_path)
-    ctx.load_verify_locations(cafile=cert_path)
-    ctx.verify_mode = ssl.CERT_REQUIRED
-
+    cert_path, ctx = cert_ssl_context_factory()
     server = make_mock_server(ssl_context=ctx)
 
     server.mock.side_effect = [
@@ -342,7 +335,7 @@ def test_do_not_prompt_for_authentication(
 
 
 def test_do_not_prompt_for_authentication_git(
-    script: PipTestEnvironment, data: TestData, cert_factory: CertFactory
+    script: PipTestEnvironment, data: TestData
 ) -> None:
     """Test behaviour if --no-input option is given while installing
     from a git http url requiring authentication
@@ -420,7 +413,7 @@ def flags(
 @pytest.mark.network
 def test_prompt_for_keyring_if_needed(
     data: TestData,
-    cert_factory: CertFactory,
+    cert_ssl_context_factory: CertSSLContextFactory,
     auth_needed: bool,
     flags: list[str],
     keyring_provider: str,
@@ -462,14 +455,9 @@ def test_prompt_for_keyring_if_needed(
     if keyring_provider_implementation != "subprocess":
         keyring_script = script
 
-    cert_path = cert_factory()
-    ctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-    ctx.load_cert_chain(cert_path, cert_path)
-    ctx.load_verify_locations(cafile=cert_path)
-    ctx.verify_mode = ssl.CERT_REQUIRED
-
     response = authorization_response if auth_needed else file_response
 
+    cert_path, ctx = cert_ssl_context_factory()
     server = make_mock_server(ssl_context=ctx)
     server.mock.side_effect = [
         package_page(
