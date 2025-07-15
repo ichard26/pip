@@ -15,8 +15,7 @@ from tests.lib.requests_mocks import MockResponse
 )
 def test_raise_for_status_raises_exception(status_code: int, error_type: str) -> None:
     contents = b"downloaded"
-    resp = MockResponse(contents)
-    resp.status_code = status_code
+    resp = MockResponse(contents, status_code)
     resp.url = "http://www.example.com/whatever.tgz"
     resp.reason = "Network Error"
     with pytest.raises(NetworkConnectionError) as excinfo:
@@ -29,8 +28,7 @@ def test_raise_for_status_raises_exception(status_code: int, error_type: str) ->
 
 def test_raise_for_status_does_not_raises_exception() -> None:
     contents = b"downloaded"
-    resp = MockResponse(contents)
-    resp.status_code = 201
+    resp = MockResponse(contents, status_code=201)
     resp.url = "http://www.example.com/whatever.tgz"
     resp.reason = "No error"
     raise_for_status(resp)

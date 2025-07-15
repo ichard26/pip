@@ -302,16 +302,13 @@ def test_keyring_set_password(
     )
 
     req = MockRequest("https://example.com")
-    resp = MockResponse(b"")
-    resp.url = req.url
+    resp = MockResponse(b"", url=req.url)
     connection = MockConnection()
 
     def _send(sent_req: MockRequest, **kwargs: Any) -> MockResponse:
         assert sent_req is req
         assert "Authorization" in sent_req.headers
-        r = MockResponse(b"")
-        r.status_code = response_status
-        return r
+        return MockResponse(b"", status_code=response_status)
 
     # https://github.com/python/mypy/issues/2427
     connection._send = _send  # type: ignore[assignment]

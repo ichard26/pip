@@ -28,12 +28,24 @@ class MockResponse:
     connection: MockConnection
     url: str
 
-    def __init__(self, contents: bytes) -> None:
+    def __init__(
+        self,
+        contents: bytes,
+        status_code: int = 200,
+        *,
+        url: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.raw = FakeStream(contents)
         self.content = contents
         self.reason = "OK"
-        self.status_code = 200
-        self.headers = {"Content-Length": str(len(contents))}
+        self.status_code = status_code
+        if url is not None:
+            self.url = url
+        if headers is not None:
+            self.headers = headers
+        else:
+            self.headers = {"Content-Length": str(len(contents))}
         self.history: list[MockResponse] = []
         self.from_cache = False
 

@@ -69,8 +69,7 @@ def test_download_http_url__no_directory_traversal(
     link = Link(mock_url)
 
     session = Mock()
-    resp = MockResponse(contents)
-    resp.url = mock_url
+    resp = MockResponse(contents, url=mock_url)
     resp.headers = {
         # Set the content-type to a random value to prevent
         # mimetypes.guess_extension from guessing the extension.
