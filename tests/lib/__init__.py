@@ -152,6 +152,23 @@ class TestData:
         self.source = source or DATA_DIR
         self.root = root.resolve()
 
+    def find(self, identifier: str) -> pathlib.Path:
+        """Convenience method for finding a data file."""
+        path = pathlib.Path(identifier)
+        if path.parent == pathlib.Path("."):
+            # No group provided but it's a distribution file, assume it's from packages/
+            if path.name.endswith((".whl", ".tar.gz")):
+                group = "packages"
+            else:
+                raise ValueError("must provide a data group prefix")
+        else:
+            group = path.parent.name
+
+        resource = self.root / group / path.name
+        if not resource.exists():
+            raise ValueError(f"data '{identifier}' does not exist!")
+        return resource
+
     @classmethod
     def copy(cls, root: pathlib.Path) -> TestData:
         obj = cls(root)
@@ -726,13 +743,24 @@ class PipTestEnvironment(TestFileEnvironment):
     def pip_install_local(
         self,
         *args: StrPath,
+        find_links: StrPath | list[StrPath] = "packages",
         **kwargs: Any,
     ) -> TestPipResult:
+        if not isinstance(find_links, list):
+            find_links = [find_links]
+        find_links_args: list[StrPath] = []
+        for folder in find_links:
+            path = pathlib.Path(folder)
+            find_links_args.append("--find-links")
+            if path.parent == pathlib.Path("."):
+                find_links_args.append(pathlib.Path(DATA_DIR, folder).as_uri())
+            else:
+                find_links_args.append(path)
+
         return self.pip(
             "install",
             "--no-index",
-            "--find-links",
-            pathlib.Path(DATA_DIR, "packages").as_uri(),
+            *find_links_args,
             *args,
             **kwargs,
         )
