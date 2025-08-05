@@ -13,14 +13,20 @@ import locale
 import logging
 import os
 import pathlib
+import platform
 import re
+import struct
 import sys
+import sysconfig
 import traceback
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
 from itertools import chain, groupby, repeat
 from typing import TYPE_CHECKING, Literal
 
 from pip._vendor.packaging.requirements import InvalidRequirement
+from pip._vendor.packaging.tags import INTERPRETER_SHORT_NAMES
+from pip._vendor.packaging.utils import parse_wheel_filename
 from pip._vendor.packaging.version import InvalidVersion
 from pip._vendor.rich.console import Console, ConsoleOptions, RenderResult
 from pip._vendor.rich.markup import escape
@@ -1029,3 +1035,210 @@ class VenvCreationError(DiagnosticPipError):
             context=Text(context),
             hint_stmt=hint,
         )
+
+
+def _re_parse(pattern: str, text: str) -> tuple[str, ...]:
+    match = re.match(pattern, text)
+    assert match is not None, f"should've matched: {text}"
+    return match.groups()
+
+
+def _explain_python_tag(tag: str) -> str | None:
+    # TODO: figure out PyPy versions
+    impl, version = _re_parse(r"([a-z]+)(\d[\d_]*)", tag)
+
+    # Expand abbreviated implementation name if needed.
+    for fullname, abbrev in INTERPRETER_SHORT_NAMES.items():
+        if impl == abbrev:
+            impl = fullname
+            break
+
+    # Check Python implementation.
+    if impl != "python" and impl != sys.implementation.name:
+        return f"You're running {sys.implementation.name}, but wheel requires {impl}"
+
+    # Check Python language version.
+    current_major, current_minor = sys.version_info.major, sys.version_info.minor
+    if impl in ("python", "cpython"):
+        if len(version) == 1:
+            major_version = int(version)
+            if major_version != current_major:
+                return (
+                    f"You're running Python {current_major}"
+                    f", but wheel requires Python {major_version}"
+                )
+        else:
+            version_tuple = (int(version[0]), int(version[1:]))
+            if version_tuple != sys.version_info[:2]:
+                return (
+                    f"Platform is Python {current_major}.{current_minor}"
+                    f", but wheel requires Python {version[0]}.{version[1]}"
+                )
+
+    return None
+
+
+def _explain_abi_tag(tag: str) -> str | None:
+    # freethreading vs default build
+    # wrong minor ABI
+    # wrong interpreter for ABI
+
+    if tag == "any":
+        return None
+    return None
+
+
+@dataclass(frozen=True)
+class WindowsTag:
+    system: str = field(init=False, default="Windows")
+    architecture: str
+
+
+@dataclass(frozen=True)
+class MacOSTag:
+    system: str = field(init=False, default="macOS")
+    architecture: str
+    release: str
+
+    def supported_architectures(self) -> list[str]:
+        groups = {
+            "universal2": ["arm64", "x86_64"],
+            "universal": ["i386", "ppc", "ppc64", "x86_64"],
+        }
+        return groups.get(self.architecture, [self.architecture])
+
+
+@dataclass(frozen=True)
+class LinuxTag:
+    system: str = field(init=False, default="Linux")
+    libc: Literal["glibc", "musl"]
+    libc_version: str
+    architecture: str
+
+
+def _linux_architecture() -> str:
+    # This was shamelessly borrowed from packaging.tags.
+    is_32bit = struct.calcsize("P") == 4
+    linux = sysconfig.get_platform().translate(str.maketrans(".- ", "___"))
+    if is_32bit:
+        if linux == "linux_x86_64":
+            return "i686"
+        elif linux == "linux_aarch64":
+            return "armv8l"
+    _, arch = linux.split("_", 1)
+    return arch
+
+
+def _parse_platform_tag(tag: str) -> WindowsTag | MacOSTag | LinuxTag | None:
+    tag = tag.lower()
+    if tag.startswith("win"):
+        return WindowsTag(tag.removeprefix("win").lstrip("_"))
+
+    if tag.startswith("macosx"):
+        version, arch = _re_parse(r"macosx_(\d+_\d+)_(.+)", tag)
+        return MacOSTag(arch, version.replace("_", "."))
+
+    if tag.startswith("manylinux"):
+        if match := re.match(r"manylinux(1|2010|2014)_(.+)", tag):
+            return LinuxTag("glibc", *match.groups())
+        else:
+            libc_version, arch = _re_parse(r"manylinux_(\d+_\d+)_(.+)", tag)
+            return LinuxTag("glibc", libc_version.replace("_", "."), arch)
+
+    if tag.startswith("musllinux"):
+        libc_version, arch = _re_parse(r"musllinux_(\d+_\d+)_(.+)", tag)
+        return LinuxTag("musl", libc_version.replace("_", "."), arch)
+
+    return None
+
+
+def _explain_platform_tag(raw_tag: str) -> str | None:
+    tag = _parse_platform_tag(raw_tag)
+    # This wheel is compatible with any platform or an unknown platform, give up.
+    if raw_tag == "any" or tag is None:
+        return None
+
+    current_system = platform.system()
+    if current_system == "Darwin":
+        current_system = "macOS"  # Standardize around "macOS" as it's more well-known
+
+    if tag.system != current_system:
+        return f"You're on {current_system}, but wheel requires {tag.system}"
+
+    # OK, we know the OS is compatible, what about the architecture or version?
+
+    if isinstance(tag, WindowsTag):
+        # Due to Windows' excellent backwards compatibility, this must be an
+        # architecture issue.
+        return (
+            f"You're on Windows {platform.machine()}"
+            ", but wheel requires Windows {tag.architecture}"
+        )
+
+    elif isinstance(tag, MacOSTag):
+        current_release, _, current_arch = platform.mac_ver()
+        if current_arch not in tag.supported_architectures():
+            return (
+                f"You're on macOS {current_arch}, but wheel targets these"
+                f" architectures: {', '.join(tag.supported_architectures())}"
+            )
+        return (
+            f"You're on macOS {current_release}"
+            ", but wheel targets macOS >={tag.release}"
+        )
+
+    elif isinstance(tag, LinuxTag):
+        current_libc, current_libc_ver = platform.libc_ver()
+        current_arch = _linux_architecture()
+        # (1) Check architecture and libc type first.
+        if tag.architecture != current_arch or tag.libc != current_libc:
+            return (
+                f"You're on Linux {current_arch} ({current_libc})"
+                f", but wheel requires Linux {tag.architecture} ({tag.libc})"
+            )
+        # (2) If the wheel targets legacy manylinux, then glibc must be too old.
+        if tag.libc_version in ("1", "2010", "2014"):
+            mapping = {"1": "2.5", "2010": "2.12", "2014": "2.17"}
+            return (
+                f"You're on Linux (glibc {current_libc_ver})"
+                f", but wheel requires glibc >={mapping[tag.libc_version]}"
+            )
+        # (3) Otherwise, libc must be too old.
+        return (
+            "You're on Linux (libc {current_libc_ver})"
+            ", but wheel requires libc >= {tag.version}"
+        )
+
+    return None
+
+
+def diagnose_unsupported(filename: str) -> str | None:
+    _, _, _, tags = parse_wheel_filename(filename)
+    if len(tags) > 1:
+        # This wheel supports multiple tags, don't even try (TODO: actually try)
+        return None
+
+    tag = next(iter(tags))
+    return (
+        _explain_python_tag(tag.interpreter)
+        or _explain_abi_tag(tag.abi)
+        or _explain_platform_tag(tag.platform)
+    )
+
+
+class UnsupportedWheelDiagnostic(DiagnosticPipError):
+    reference = "unsupported-wheel"
+
+    def __init__(self, wheel: Wheel) -> None:
+        reason = diagnose_unsupported(wheel.filename)
+        if reason is None:
+            hint = "Run 'pip debug -v' for a list of compatible tags for your system."
+        else:
+            hint = None
+        super().__init__(
+            message=f"Wheel [cyan]{wheel.filename}[/] is unsupported on this platform",
+            context=Text(reason) if reason else None,
+            hint_stmt=hint,
+        )
+>>>>>>> 9af924d86 ([wip] Explain why a wheel is unsupported)
+>>>>>>> c65956642 ([wip] Explain why a wheel is unsupported)

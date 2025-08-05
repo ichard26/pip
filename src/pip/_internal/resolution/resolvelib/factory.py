@@ -29,6 +29,7 @@ from pip._internal.exceptions import (
     MetadataInvalid,
     UnsupportedPythonVersion,
     UnsupportedWheel,
+    UnsupportedWheelDiagnostic,
 )
 from pip._internal.index.package_finder import PackageFinder
 from pip._internal.metadata import BaseDistribution, get_default_environment
@@ -138,8 +139,7 @@ class Factory:
         wheel = Wheel(link.filename)
         if wheel.supported(self._finder.target_python.get_unsorted_tags()):
             return
-        msg = f"{link.filename} is not a supported wheel on this platform."
-        raise UnsupportedWheel(msg)
+        raise UnsupportedWheelDiagnostic(wheel)
 
     def _make_extras_candidate(
         self,
