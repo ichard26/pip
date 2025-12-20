@@ -99,7 +99,13 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
 
     mock = Mock()
     app = _mock_wsgi_adapter(mock)
+
+    from datetime import datetime
+
+    print(datetime.now().isoformat(), "before _make_server")
     server = _make_server("localhost", 0, app=app, **kwargs)
+    print(datetime.now().isoformat(), "after _make_server")
+
     server.mock = mock
     return server
 
