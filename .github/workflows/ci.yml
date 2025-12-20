@@ -113,9 +113,9 @@ jobs:
       github.event_name != 'pull_request'
 
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest]
+        os: [macos-latest]
         python:
           - "3.9"
           - "3.10"
@@ -150,6 +150,7 @@ jobs:
 
       # Main check
       - name: Run unit tests
+        if: false
         run: >-
           nox -s test-${{ matrix.python.key || matrix.python }} --
           tests/unit
@@ -157,7 +158,7 @@ jobs:
       - name: Run integration tests
         run: >-
           nox -s test-${{ matrix.python.key || matrix.python }} --no-install --
-          tests/functional
+          tests/functional/ -k "test_install_sends_client_cert"
           --verbose --numprocesses auto --showlocals
           --durations=5
 
@@ -166,9 +167,7 @@ jobs:
     runs-on: ${{ matrix.os }}-latest
 
     needs: [determine-changes]
-    if: >-
-      needs.determine-changes.outputs.tests == 'true' ||
-      github.event_name != 'pull_request'
+    if: false
 
     strategy:
       fail-fast: true
@@ -231,9 +230,7 @@ jobs:
     runs-on: macos-latest
 
     needs: [packaging, determine-changes]
-    if: >-
-      needs.determine-changes.outputs.tests == 'true' ||
-      github.event_name != 'pull_request'
+    if: false
 
     steps:
       - uses: actions/checkout@v6.0.1
@@ -256,7 +253,7 @@ jobs:
           --use-zipapp
 
   check:  # This job does nothing and is only used for the branch protection
-    if: always()
+    if: false
 
     needs:
       - determine-changes

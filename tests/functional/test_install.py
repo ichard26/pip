@@ -2365,7 +2365,11 @@ def test_install_sends_client_cert(
     ctx.load_verify_locations(cafile=cert_path)
     ctx.verify_mode = ssl.CERT_REQUIRED
 
+    from datetime import datetime
+
+    print(datetime.now().isoformat(), "SSL context")
     server = make_mock_server(ssl_context=ctx)
+    print(datetime.now().isoformat(), "SSL context after")
     server.mock.side_effect = [
         package_page(
             {
@@ -2390,8 +2394,12 @@ def test_install_sends_client_cert(
     args.extend(install_args)
     args.append("simple")
 
+    print(datetime.now().isoformat(), "before server start")
     with server_running(server):
+        print(datetime.now().isoformat(), "before pip run")
         script.pip(*args)
+        print(datetime.now().isoformat(), "after pip run")
+    print(datetime.now().isoformat(), "after server shutdown")
 
     assert server.mock.call_count == 2
     for call_args in server.mock.call_args_list:
@@ -2400,6 +2408,8 @@ def test_install_sends_client_cert(
         environ, _ = call_args[0]
         assert "SSL_CLIENT_CERT" in environ
         assert environ["SSL_CLIENT_CERT"]
+
+    pytest.fail("debug")
 
 
 def test_install_sends_certs_for_pep518_deps(
