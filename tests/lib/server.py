@@ -103,6 +103,17 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     from datetime import datetime
     import socket
 
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print(datetime.now().isoformat(), "before s.setsockopt()") 
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    print(datetime.now().isoformat(), "before s.bind()")
+    s.bind(("localhost", 0))
+    print(datetime.now().isoformat(), "after s.bind()")
+    server_address = s.getsockname()
+    print(datetime.now().isoformat(), "after s.getsockname()")
+    s.close()
+
     print(datetime.now().isoformat(), "before _make_server")
 
     server_bind = BaseWSGIServer.server_bind
@@ -122,11 +133,6 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     server = _make_server("localhost", 0, app=app, **kwargs)
     print(datetime.now().isoformat(), "after _make_server")
 
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print(datetime.now().isoformat(), "before s.bind()")
-    s.bind(("localhost", 0))
-    print(datetime.now().isoformat(), "after s.bind()")
-    s.close()
 
     server.mock = mock
     return server
