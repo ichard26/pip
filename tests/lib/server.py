@@ -97,11 +97,16 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     """
     kwargs.setdefault("request_handler", _RequestHandler)
 
+    def wrapper(host):
+        return "piptestserver.home.arpa"
+
+    import socket
+    socket.getfqdn = wrapper
+
     mock = Mock()
     app = _mock_wsgi_adapter(mock)
 
     from datetime import datetime
-    import socket
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     print(datetime.now().isoformat(), "before s.setsockopt()") 
