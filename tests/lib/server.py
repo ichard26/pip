@@ -124,7 +124,7 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     print(datetime.now().isoformat(), "before s.bind()")
-    s.bind(("0.0.0.0", 51000))
+    s.bind(("localhost", 0))
     print(datetime.now().isoformat(), "after s.bind()")
     s.close()
 
