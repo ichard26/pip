@@ -103,6 +103,21 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     from datetime import datetime
 
     print(datetime.now().isoformat(), "before _make_server")
+
+    server_bind = BaseWSGIServer.server_bind
+    def wrap(self):
+        print(datetime.now().isoformat(), "before .server_bind()")
+        server_bind(self)
+        print(datetime.now().isoformat(), "after .server_bind()")
+
+    server_activate = BaseWSGIServer.server_activate
+    def wrap2(self):
+        print(datetime.now().isoformat(), "before .server_activate()")
+        server_activate(self)
+        print(datetime.now().isoformat(), "after .server_activate()")
+
+    BaseWSGIServer.server_bind = wrap
+    BaseWSGIServer.server_activate = wrap2
     server = _make_server("localhost", 0, app=app, **kwargs)
     print(datetime.now().isoformat(), "after _make_server")
 
