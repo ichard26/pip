@@ -111,6 +111,9 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     s.bind(("localhost", 0))
     print(datetime.now().isoformat(), "after s.bind()")
     server_address = s.getsockname()
+    print(server_address)
+    socket.getfqdn(server_address[0])
+
     print(datetime.now().isoformat(), "after s.getsockname()")
     s.close()
 
