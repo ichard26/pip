@@ -6,7 +6,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Callable
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from werkzeug.serving import BaseWSGIServer, WSGIRequestHandler
 from werkzeug.serving import make_server as _make_server
@@ -97,30 +97,10 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     """
     kwargs.setdefault("request_handler", _RequestHandler)
 
-    def wrapper(host):
-        return "piptestserver.home.arpa"
-
-    import socket
-    socket.getfqdn = wrapper
-
     mock = Mock()
     app = _mock_wsgi_adapter(mock)
 
     from datetime import datetime
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print(datetime.now().isoformat(), "before s.setsockopt()") 
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    print(datetime.now().isoformat(), "before s.bind()")
-    s.bind(("localhost", 0))
-    print(datetime.now().isoformat(), "after s.bind()")
-    server_address = s.getsockname()
-    print(server_address)
-    socket.getfqdn(server_address[0])
-
-    print(datetime.now().isoformat(), "after s.getsockname()")
-    s.close()
 
     print(datetime.now().isoformat(), "before _make_server")
 
@@ -138,9 +118,17 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
 
     BaseWSGIServer.server_bind = wrap
     BaseWSGIServer.server_activate = wrap2
-    server = _make_server("localhost", 0, app=app, **kwargs)
-    print(datetime.now().isoformat(), "after _make_server")
+    # HTTPServer, which Werkzeug subclasses, will try to query the fully qualified
+    # domain name for the socket address during socket binding. This can be extremely
+    # slow (30s, even) due to DNS timeouts. It's only used for the SERVER_NAME CGI
+    # environment field which is not relevant for our tests, so patch it to
+    # immediately return a fake local FQDN.
+    #
+    # See also: https://apple.stackexchange.com/questions/175320/why-is-my-hostname-resolution-taking-so-long
+    with patch("socket.getfqdn", lambda name: "piptestserver.home.arpa"):
+        server = _make_server("localhost", 0, app=app, **kwargs)
 
+    print(datetime.now().isoformat(), "after _make_server")
 
     server.mock = mock
     return server

@@ -2409,8 +2409,6 @@ def test_install_sends_client_cert(
         assert "SSL_CLIENT_CERT" in environ
         assert environ["SSL_CLIENT_CERT"]
 
-    pytest.fail("debug")
-
 
 def test_install_sends_certs_for_pep518_deps(
     script: PipTestEnvironment,
