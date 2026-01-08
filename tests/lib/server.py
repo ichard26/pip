@@ -101,6 +101,7 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     app = _mock_wsgi_adapter(mock)
 
     from datetime import datetime
+    import socket
 
     print(datetime.now().isoformat(), "before _make_server")
 
@@ -120,6 +121,12 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
     BaseWSGIServer.server_activate = wrap2
     server = _make_server("localhost", 0, app=app, **kwargs)
     print(datetime.now().isoformat(), "after _make_server")
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    print(datetime.now().isoformat(), "before s.bind()")
+    s.bind(("0.0.0.0", 51000))
+    print(datetime.now().isoformat(), "after s.bind()")
+    s.close()
 
     server.mock = mock
     return server
