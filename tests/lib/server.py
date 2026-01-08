@@ -6,7 +6,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import ExitStack, contextmanager
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Callable
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from werkzeug.serving import BaseWSGIServer, WSGIRequestHandler
 from werkzeug.serving import make_server as _make_server
@@ -99,7 +99,37 @@ def make_mock_server(**kwargs: Any) -> _MockServer:
 
     mock = Mock()
     app = _mock_wsgi_adapter(mock)
-    server = _make_server("localhost", 0, app=app, **kwargs)
+
+    from datetime import datetime
+
+    print(datetime.now().isoformat(), "before _make_server")
+
+    server_bind = BaseWSGIServer.server_bind
+    def wrap(self):
+        print(datetime.now().isoformat(), "before .server_bind()")
+        server_bind(self)
+        print(datetime.now().isoformat(), "after .server_bind()")
+
+    server_activate = BaseWSGIServer.server_activate
+    def wrap2(self):
+        print(datetime.now().isoformat(), "before .server_activate()")
+        server_activate(self)
+        print(datetime.now().isoformat(), "after .server_activate()")
+
+    BaseWSGIServer.server_bind = wrap
+    BaseWSGIServer.server_activate = wrap2
+    # HTTPServer, which Werkzeug subclasses, will try to query the fully qualified
+    # domain name for the socket address during socket binding. This can be extremely
+    # slow (30s, even) due to DNS timeouts. It's only used for the SERVER_NAME CGI
+    # environment field which is not relevant for our tests, so patch it to
+    # immediately return a fake local FQDN.
+    #
+    # See also: https://apple.stackexchange.com/questions/175320/why-is-my-hostname-resolution-taking-so-long
+    with patch("socket.getfqdn", lambda name: "piptestserver.home.arpa"):
+        server = _make_server("localhost", 0, app=app, **kwargs)
+
+    print(datetime.now().isoformat(), "after _make_server")
+
     server.mock = mock
     return server
 
