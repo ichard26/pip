@@ -5,7 +5,8 @@ import functools
 import os
 import tempfile
 import textwrap
-from typing import Any, Dict, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import pip._internal.configuration
 from pip._internal.configuration import Kind
@@ -18,13 +19,14 @@ class ConfigurationMixin:
             isolated=False,
         )
 
-    def patch_configuration(self, variant: Kind, di: Dict[str, Any]) -> None:
+    def patch_configuration(self, variant: Kind, di: dict[str, Any]) -> None:
         old = self.configuration._load_config_files
 
         @functools.wraps(old)
         def overridden() -> None:
             # Manual Overload
-            self.configuration._config[variant].update(di)
+            self.configuration._config[variant].setdefault("fakefile", {})
+            self.configuration._config[variant]["fakefile"].update(di)
             # Configuration._parsers has type:
             # Dict[Kind, List[Tuple[str, RawConfigParser]]].
             # As a testing convenience, pass a special value.
