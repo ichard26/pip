@@ -23,13 +23,13 @@ from pip._vendor.rich.markup import escape
 from pip._internal.cache import CacheEntry, WheelCache
 from pip._internal.exceptions import (
     DistributionNotFound,
+    IncompatibleWheelDiagnostic,
     InstallationError,
     InvalidInstalledPackage,
     MetadataInconsistent,
     MetadataInvalid,
     UnsupportedPythonVersion,
     UnsupportedWheel,
-    UnsupportedWheelDiagnostic,
 )
 from pip._internal.index.package_finder import PackageFinder
 from pip._internal.metadata import BaseDistribution, get_default_environment
@@ -137,9 +137,10 @@ class Factory:
         if not link.is_wheel:
             return
         wheel = Wheel(link.filename)
-        if wheel.supported(self._finder.target_python.get_unsorted_tags()):
+        supported_tags = self._finder.target_python.get_unsorted_tags()
+        if wheel.supported(supported_tags):
             return
-        raise UnsupportedWheelDiagnostic(wheel)
+        raise IncompatibleWheelDiagnostic(wheel, frozenset(supported_tags))
 
     def _make_extras_candidate(
         self,

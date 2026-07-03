@@ -1286,13 +1286,11 @@ def diagnose_unsupported(filename: str, supported_tags: frozenset[Tag]) -> str |
     return diagnose_one(next(iter(tags)))
 
 
-class UnsupportedWheelDiagnostic(DiagnosticPipError):
+class IncompatibleWheelDiagnostic(DiagnosticPipError):
     reference = "incompatible-wheel"
 
-    def __init__(self, wheel: Wheel) -> None:
-        from pip._internal.utils.compatibility_tags import get_supported
-
-        reason = diagnose_unsupported(wheel.filename, frozenset(get_supported()))
+    def __init__(self, wheel: Wheel, supported_tags: frozenset[Tag]) -> None:
+        reason = diagnose_unsupported(wheel.filename, supported_tags)
         hint = "Run 'pip debug -v' for a list of compatible tags for your system."
         super().__init__(
             message=Text.assemble((wheel.filename, "cyan"), " is incompatible"),
