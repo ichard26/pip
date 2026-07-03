@@ -11,6 +11,7 @@ import configparser
 import contextlib
 import locale
 import logging
+import operator
 import os
 import pathlib
 import platform
@@ -22,7 +23,7 @@ import traceback
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from itertools import chain, groupby, repeat
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from pip._vendor.packaging.requirements import InvalidRequirement
 from pip._vendor.packaging.tags import INTERPRETER_SHORT_NAMES
@@ -1045,11 +1046,11 @@ def _re_parse(pattern: str, text: str) -> tuple[str, ...]:
     return match.groups()
 
 
-def _explain_python_tag(tag: str, supported_tags: frozenset[str]) -> str | None:
-    """Try to explain Python incompatibilities, if they exist.
+def _explain_python_tag(tag: Tag) -> str | None:
+    """Try to explain Python incompatibilities, if possible.
 
     Specifically checks Python implementation and version."""
-    impl, version = _re_parse(r"([a-z]+)(\d[\d_]*)", tag)
+    impl, version = _re_parse(r"([a-z]+)(\d[\d_]*)", tag.interpreter)
 
     # Expand abbreviated implementation name if needed.
     for fullname, abbrev in INTERPRETER_SHORT_NAMES.items():
@@ -1057,52 +1058,48 @@ def _explain_python_tag(tag: str, supported_tags: frozenset[str]) -> str | None:
             impl = fullname
             break
 
-    # Check Python implementation.
     if impl != "python" and impl != sys.implementation.name:
         return (
             f"Wheel requires a different Python implementation: {impl}"
             f" (current: {sys.implementation.name})"
         )
 
+    # If wheel targets stable ABI, then Python version is just a minimum.
+    if "abi" in tag.abi:
+        op = operator.gt
+        plus = "+"
+    else:
+        op = operator.eq
+        plus = ""
+
     # Check Python language version.
     current_major, current_minor = sys.version_info.major, sys.version_info.minor
     if impl in ("python", "cpython") and len(version) == 1:
-        if int(version) != current_major:
-            return f"Wheel requires Python {version} (current: {current_major})"
+        if op(int(version), current_major):
+            return f"Wheel requires Python {version}{plus} (current: {current_major})"
     elif impl in ("python", "cpython"):
         version_tuple = (int(version[0]), int(version[1:]))
-        if version_tuple != sys.version_info[:2]:
+        if op(version_tuple, sys.version_info[:2]):
             return (
-                f"Wheel requires Python {version[0]}.{version[1:]}"
-                f" (current: {current_major}.{current_minor}"
+                f"Wheel requires Python {version[0]}.{version[1:]}{plus}"
+                f" (current: {current_major}.{current_minor})"
             )
-
-    if tag not in supported_tags:
-        return f"Wheel requires a different Python version: {tag}"
 
     return None
 
 
-def _explain_abi_tag(tag: str, supported_tags: frozenset[str]) -> str | None:
-    """Try to explain ABI incompatibilities, if they exist.
+def _explain_abi_tag(tag: str) -> str | None:
+    """Try to explain ABI incompatibilities, if possible.
 
     Specific checks only include free-threading/no free-threading.
     """
-    if tag == "any":
-        return None
-
     if tag.startswith("cp") and sys.version_info >= (3, 13):
-        gil_disabled = sysconfig.get_config_var("Py_GIL_DISABLED")
-        if gil_disabled is not None:
-            system_free_threading = bool(gil_disabled)
-            wheel_free_threading = tag.endswith("t")
-        if system_free_threading and not wheel_free_threading:
+        gil_disabled = sysconfig.get_config_var("Py_GIL_DISABLED") or 0
+        wheel_free_threading = tag.endswith("t")
+        if gil_disabled and not wheel_free_threading:
             return "Wheel only supports non free-threaded Python"
-        elif not system_free_threading and wheel_free_threading:
+        elif not gil_disabled and wheel_free_threading:
             return "Wheel only supports free-threaded Python"
-
-    if tag not in supported_tags:
-        return f"Wheel ABI is unsupported: {tag}"
 
     return None
 
@@ -1141,7 +1138,7 @@ class LinuxTag:
     architecture: str
 
 
-def _linux_architecture() -> str:
+def _current_linux_architecture() -> str:
     # This was shamelessly borrowed from packaging.tags.
     is_32bit = struct.calcsize("P") == 4
     linux = sysconfig.get_platform().translate(str.maketrans(".- ", "___"))
@@ -1165,7 +1162,9 @@ def _parse_platform_tag(tag: str) -> WindowsTag | MacOSTag | LinuxTag | None:
 
     if tag.startswith("manylinux"):
         if match := re.match(r"manylinux(1|2010|2014)_(.+)", tag):
-            return LinuxTag("glibc", *match.groups())
+            glibc_ver, arch = match.groups()
+            legacy_mapping = {"1": "2.5", "2010": "2.12", "2014": "2.17"}
+            return LinuxTag("glibc", legacy_mapping[glibc_ver], arch)
         else:
             libc_version, arch = _re_parse(r"manylinux_(\d+_\d+)_(.+)", tag)
             return LinuxTag("glibc", libc_version.replace("_", "."), arch)
@@ -1178,28 +1177,23 @@ def _parse_platform_tag(tag: str) -> WindowsTag | MacOSTag | LinuxTag | None:
 
 
 def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str | None:
-    """Try to explain platform incompatibilities, if they exist.
+    """Try to explain platform incompatibilities, if possible.
 
     Specific checks currently include OS, architecture, and libc mismatches.
     """
     tag = _parse_platform_tag(raw_tag)
-    # This wheel is compatible with any platform or an unknown platform, give up.
-    if raw_tag == "any" or tag is None:
-        return None
+    if tag is None:
+        return None  # This is an unknown platform, give up.
 
     current_system = platform.system()
     if current_system == "Darwin":
         current_system = "macOS"  # Standardize around "macOS" as it's more well-known
-
     if tag.system != current_system:
-        return f"Wheel requires {current_system}"
-
-    # OK, we know the OS is compatible, what about the architecture or version?
+        return f"Wheel requires {tag.system}"
 
     if isinstance(tag, WindowsTag):
         # Due to Windows' excellent backwards compatibility, this must be an
         # architecture issue.
-        # TODO: check this
         return (
             f"Wheel requires a different Windows architecture: {tag.architecture}"
             f" (current: {platform.machine()})"
@@ -1214,12 +1208,11 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
                 f" (current: {current_arch})"
             )
         if current_release < tag.release:
-            return f"Wheel requires macOS >={tag.release} (current: {current_release})"
+            return f"Wheel requires macOS >= {tag.release} (current: {current_release})"
 
     elif isinstance(tag, LinuxTag):
-        # TODO: check architecture
         current_libc, current_libc_ver = platform.libc_ver()
-        current_arch = _linux_architecture()
+        current_arch = _current_linux_architecture()
         # (1) Check architecture and libc type first.
         if tag.architecture != current_arch or tag.libc != current_libc:
             return (
@@ -1228,79 +1221,81 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
             )
         # (2) If wheel targets manylinux, then glibc may be too old.
         supports_manylinux = any(t.startswith("manylinux") for t in supported_tags)
+        current_libc = f"(current: {current_libc_ver})"
         if supports_manylinux and tag.libc == "glibc":
-            legacy_mapping = {"1": "2.5", "2010": "2.12", "2014": "2.17"}
-            wheel_baseline = legacy_mapping.get(tag.libc_version, tag.libc_version)
-            if current_libc_ver < wheel_baseline:
-                return (
-                    f"Wheel requires glibc >={wheel_baseline}"
-                    f" (current: {current_libc_ver})"
-                )
+            if current_libc_ver < tag.libc_version:
+                return f"Wheel requires glibc >= {tag.libc_version} {current_libc}"
         # (3) If wheel targets musllinux, then musl may be too old.
         supports_musllinux = any(t.startswith("musllinux") for t in supported_tags)
         if supports_musllinux and tag.libc == "musl":
             if current_libc_ver < tag.libc_version:
-                return (
-                    f"Wheel requires musl >={wheel_baseline}"
-                    f" (current: {current_libc_ver})"
-                )
-
-    if raw_tag not in supported_tags:
-        return f"Wheel platform is unsupported: {tag}"
+                return f"Wheel requires musl >= {tag.libc_version} {current_libc}"
 
     return None
 
 
-def diagnose_unsupported(filename: str, supported_tags: frozenset[Tag]) -> list[str]:
+def diagnose_unsupported(filename: str, supported_tags: frozenset[Tag]) -> str | None:
     """Determine reasons why a wheel is unsupported.
 
     Inspects the wheel's supported tags and applies best-effort heuristics
     to determine specific reasons, focusing on the prominent sources
     of incompatibilities that are feasible to verify.
 
-    Otherwise, returns basic reasons.
+    Returns None if all efforts fail.
     """
 
-    def diagnose_one(tag: Tag) -> list[str]:
-        reasons = [
-            _explain_python_tag(
-                tag.interpreter, frozenset(t.interpreter for t in supported_tags)
-            ),
-            _explain_platform_tag(
-                tag.platform, frozenset(t.platform for t in supported_tags)
-            ),
-            _explain_abi_tag(tag.abi, frozenset(t.abi for t in supported_tags)),
-        ]
-        return [r for r in reasons if r is not None]
+    supported_platforms = frozenset(t.platform for t in supported_tags)
+    supported_abis = frozenset(t.abi for t in supported_tags)
+
+    def diagnose_one(tag: Tag) -> str | None:
+        """Diagnose why one tag is unsuppported.
+
+        Returns the most important reason even if there are multiple
+        incompatibilities, in this order: Platform -> Interpreter -> ABI.
+        """
+        # We want to check that the platform/abi is not supported before attempting
+        # to diagnose why (to avoid false positives).
+        if tag.platform not in supported_platforms:
+            if reason := _explain_platform_tag(tag.platform, supported_platforms):
+                return reason
+            return f"Wheel requires a different platform: {tag.platform}"
+        # The interpreter tag is weird because if the stable ABI is in use, then
+        # python version is only a baseline.
+        if reason := _explain_python_tag(tag):
+            return reason
+        if tag.abi not in supported_abis:
+            if reason := _explain_abi_tag(tag.abi):
+                return reason
+            return "Wheel ABI is unsupported: {tag.abi}"
+        return None
 
     _, _, _, tags = parse_wheel_filename(filename)
     if len(tags) > 1:
-        # This wheel supports multiple tags, only surface reasons common to all
-        # tags (this not ideal for many reasons, but it's easy and will do OK
-        # for common issues, like the wrong OS).
-        tag_list = list(tags)
-        common_reasons = diagnose_one(tag_list.pop(0))
-        while tag_list and common_reasons:
-            for reason in diagnose_one(tag_list.pop(0)):
-                if reason not in common_reasons:
-                    common_reasons.remove(reason)
-        return common_reasons
+        # This wheel supports multiple tags, first try to surface the reason
+        # common to all tags. If that fails, then just print each tag separately.
+        tag_reasons = {t: diagnose_one(t) for t in tags}
+        unique_reasons = set(tag_reasons.values())
+        if len(unique_reasons) == 1 and None not in unique_reasons:
+            return cast(str, unique_reasons.pop())
+
+        return (
+            "None of the wheel's tags match the current environment:\n  "
+            + "\n  ".join(str(t) for t in tag_reasons)
+        )
 
     return diagnose_one(next(iter(tags)))
 
 
 class UnsupportedWheelDiagnostic(DiagnosticPipError):
-    reference = "unsupported-wheel"
+    reference = "incompatible-wheel"
 
     def __init__(self, wheel: Wheel) -> None:
         from pip._internal.utils.compatibility_tags import get_supported
 
-        reasons = diagnose_unsupported(wheel.filename, frozenset(get_supported()))
+        reason = diagnose_unsupported(wheel.filename, frozenset(get_supported()))
         hint = "Run 'pip debug -v' for a list of compatible tags for your system."
         super().__init__(
-            message=Text.assemble(
-                "Wheel ", Text(wheel.filename, "cyan"), " is incompatible"
-            ),
-            context=Text("\n".join(reasons)) if reasons else None,
+            message=Text.assemble((wheel.filename, "cyan"), " is incompatible"),
+            context=Text(reason) if reason else None,
             hint_stmt=hint,
         )
