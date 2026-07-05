@@ -31,7 +31,6 @@ If you find bugs, need help, or want to talk to the developers, please use our m
 
 * `Issue tracking`_
 * `Discourse channel`_
-* `User IRC`_
 
 If you want to get involved, head over to GitHub to get the source code, look at our development documentation and feel free to jump on the developer mailing lists and chat rooms:
 
@@ -55,6 +54,5 @@ rooms, and mailing lists is expected to follow the `PSF Code of Conduct`_.
 .. _Development documentation: https://pip.pypa.io/en/latest/development
 .. _Issue tracking: https://github.com/pypa/pip/issues
 .. _Discourse channel: https://discuss.python.org/c/packaging
-.. _User IRC: https://kiwiirc.com/nextclient/#ircs://irc.libera.chat:+6697/pypa
 .. _Development IRC: https://kiwiirc.com/nextclient/#ircs://irc.libera.chat:+6697/pypa-dev
 .. _PSF Code of Conduct: https://github.com/pypa/.github/blob/main/CODE_OF_CONDUCT.md
