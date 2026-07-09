@@ -16,7 +16,6 @@ import os
 import pathlib
 import platform
 import re
-import struct
 import sys
 import sysconfig
 import traceback
@@ -1116,19 +1115,6 @@ class MacOSTag:
     architecture: str
     release: str
 
-    def supported_architectures(self) -> list[str]:
-        # Copied from:
-        #  https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/#macos
-        groups = {
-            "universal2": ["arm64", "x86_64"],
-            "universal": ["i386", "ppc", "ppc64", "x86_64"],
-            "intel": ["i386", "x86_64"],
-            "fat": ["i386", "ppc"],
-            "fat3": ["i386", "ppc", "x86_64"],
-            "fat64": ["ppc64", "x86_64"],
-        }
-        return groups.get(self.architecture, [self.architecture])
-
 
 @dataclass(frozen=True)
 class LinuxTag:
@@ -1136,19 +1122,6 @@ class LinuxTag:
     libc: Literal["glibc", "musl"]
     libc_version: str
     architecture: str
-
-
-def _current_linux_architecture() -> str:
-    # This was shamelessly borrowed from packaging.tags.
-    is_32bit = struct.calcsize("P") == 4
-    linux = sysconfig.get_platform().translate(str.maketrans(".- ", "___"))
-    if is_32bit:
-        if linux == "linux_x86_64":
-            return "i686"
-        elif linux == "linux_aarch64":
-            return "armv8l"
-    _, arch = linux.split("_", 1)
-    return arch
 
 
 def _parse_platform_tag(tag: str) -> WindowsTag | MacOSTag | LinuxTag | None:
@@ -1188,48 +1161,36 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
     current_system = platform.system()
     if current_system == "Darwin":
         current_system = "macOS"  # Standardize around "macOS" as it's more well-known
-    if tag.system != current_system:
+    if tag.system.lower() != current_system.lower():
         return f"Wheel requires {tag.system}"
 
+    supported_archs = {
+        p.architecture
+        for p in [_parse_platform_tag(t) for t in supported_tags]
+        if p is not None
+    }
+    if tag.architecture not in supported_archs:
+        return f"Wheel architecture is unsupported: {tag.architecture}"
+
     if isinstance(tag, WindowsTag):
-        # Due to Windows' excellent backwards compatibility, this must be an
-        # architecture issue.
-        return (
-            f"Wheel requires a different Windows architecture: {tag.architecture}"
-            f" (current: {platform.machine()})"
-        )
+        # Due to Windows' excellent backwards compatibility, this should've been an
+        # architecture issue but it wasn't, give up.
+        return None
 
     elif isinstance(tag, MacOSTag):
-        current_release, _, current_arch = platform.mac_ver()
-        if current_arch not in tag.supported_architectures():
-            supported = tag.supported_architectures()
-            return (
-                f"Wheel only supports these macOS architectures: {', '.join(supported)}"
-                f" (current: {current_arch})"
-            )
+        current_release, _, _ = platform.mac_ver()
+        # NOTE: due to the many changes to macOS's versioning scheme, this is imperfect.
         if current_release < tag.release:
             return f"Wheel requires macOS >= {tag.release} (current: {current_release})"
 
     elif isinstance(tag, LinuxTag):
-        current_libc, current_libc_ver = platform.libc_ver()
-        current_arch = _current_linux_architecture()
-        # (1) Check architecture and libc type first.
-        if tag.architecture != current_arch or tag.libc != current_libc:
-            return (
-                f"Wheel requires Linux {tag.architecture}/{tag.libc}"
-                f" (current: {current_arch}/{current_libc})"
-            )
-        # (2) If wheel targets manylinux, then glibc may be too old.
-        supports_manylinux = any(t.startswith("manylinux") for t in supported_tags)
-        current_libc = f"(current: {current_libc_ver})"
-        if supports_manylinux and tag.libc == "glibc":
-            if current_libc_ver < tag.libc_version:
-                return f"Wheel requires glibc >= {tag.libc_version} {current_libc}"
-        # (3) If wheel targets musllinux, then musl may be too old.
-        supports_musllinux = any(t.startswith("musllinux") for t in supported_tags)
-        if supports_musllinux and tag.libc == "musl":
-            if current_libc_ver < tag.libc_version:
-                return f"Wheel requires musl >= {tag.libc_version} {current_libc}"
+        sys_libc, sys_libc_ver = platform.libc_ver()
+        if tag.libc != sys_libc:
+            return f"Wheel requires {tag.libc} (current: {sys_libc})"
+        if sys_libc == "glibc" and sys_libc_ver < tag.libc_version:
+            return f"Wheel requires glibc {tag.libc_version}+ (current: {sys_libc_ver})"
+        if sys_libc == "musl" and sys_libc_ver < tag.libc_version:
+            return f"Wheel requires musl {tag.libc_version}+ (current: {sys_libc_ver})"
 
     return None
 
