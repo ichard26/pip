@@ -1045,11 +1045,11 @@ def _re_parse(pattern: str, text: str) -> tuple[str, ...]:
     return match.groups()
 
 
-def _explain_python_tag(tag: Tag) -> str | None:
+def _explain_python_tag(full_tag: Tag) -> str | None:
     """Try to explain Python incompatibilities, if possible.
 
     Specifically checks Python implementation and version."""
-    impl, version = _re_parse(r"([a-z]+)(\d[\d_]*)", tag.interpreter)
+    impl, version = _re_parse(r"([a-z]+)(\d[\d_]*)", full_tag.interpreter)
 
     # Expand abbreviated implementation name if needed.
     for fullname, abbrev in INTERPRETER_SHORT_NAMES.items():
@@ -1063,25 +1063,25 @@ def _explain_python_tag(tag: Tag) -> str | None:
             f" (current: {sys.implementation.name})"
         )
 
-    # If wheel targets stable ABI, then Python version is just a minimum.
-    if "abi" in tag.abi:
+    # If wheel targets stable or no ABI, then Python version is just a minimum.
+    if full_tag.abi in ("abi", "abi3", "none"):
         op = operator.gt
         plus = "+"
     else:
-        op = operator.eq
+        op = operator.ne
         plus = ""
 
     # Check Python language version.
-    current_major, current_minor = sys.version_info.major, sys.version_info.minor
+    sys_major, sys_minor = sys.version_info.major, sys.version_info.minor
     if impl in ("python", "cpython") and len(version) == 1:
-        if op(int(version), current_major):
-            return f"Wheel requires Python {version}{plus} (current: {current_major})"
+        if op(int(version), sys_major):
+            return f"Wheel requires Python {version}{plus} (current: {sys_major})"
     elif impl in ("python", "cpython"):
         version_tuple = (int(version[0]), int(version[1:]))
         if op(version_tuple, sys.version_info[:2]):
             return (
                 f"Wheel requires Python {version[0]}.{version[1:]}{plus}"
-                f" (current: {current_major}.{current_minor})"
+                f" (current: {sys_major}.{sys_minor})"
             )
 
     return None
