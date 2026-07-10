@@ -22,7 +22,7 @@ import traceback
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from itertools import chain, groupby, repeat
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Final, Literal, cast
 
 from pip._vendor.packaging.requirements import InvalidRequirement
 from pip._vendor.packaging.tags import INTERPRETER_SHORT_NAMES
@@ -1124,7 +1124,19 @@ class LinuxTag:
     architecture: str
 
 
-def _parse_platform_tag(tag: str) -> WindowsTag | MacOSTag | LinuxTag | None:
+class AndroidTag:
+    system: Final = "Android"
+    architecture: Final = "#not-implemented"
+
+
+class iOSTag:
+    system: Final = "iOS"
+    architecture: Final = "#not-implemented"
+
+
+def _parse_platform_tag(
+    tag: str,
+) -> WindowsTag | MacOSTag | LinuxTag | AndroidTag | iOSTag | None:
     tag = tag.lower()
     if tag.startswith("win"):
         return WindowsTag(tag.removeprefix("win").lstrip("_"))
@@ -1146,6 +1158,11 @@ def _parse_platform_tag(tag: str) -> WindowsTag | MacOSTag | LinuxTag | None:
         libc_version, arch = _re_parse(r"musllinux_(\d+_\d+)_(.+)", tag)
         return LinuxTag("musl", libc_version.replace("_", "."), arch)
 
+    if tag.startswith("ios"):
+        return iOSTag()
+    if tag.startswith("android"):
+        return AndroidTag()
+
     return None
 
 
@@ -1163,6 +1180,10 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
         current_system = "macOS"  # Standardize around "macOS" as it's more well-known
     if tag.system.lower() != current_system.lower():
         return f"Wheel requires {tag.system}"
+
+    if isinstance(tag, (AndroidTag, iOSTag)):
+        # TODO: not implemented yet, these platforms are niche.
+        return None
 
     supported_archs = {
         p.architecture
