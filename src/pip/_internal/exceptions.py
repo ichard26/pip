@@ -1057,7 +1057,7 @@ def _explain_python_tag(full_tag: Tag) -> str | None:
             impl = fullname
             break
 
-    if impl != "python" and impl != sys.implementation.name:
+    if impl != "python" and impl.lower() != sys.implementation.name.lower():
         return (
             f"Wheel requires a different Python implementation: {impl}"
             f" (current: {sys.implementation.name})"
@@ -1124,11 +1124,13 @@ class LinuxTag:
     architecture: str
 
 
+@dataclass(frozen=True)
 class AndroidTag:
     system: Final = "Android"
     architecture: Final = "#not-implemented"
 
 
+@dataclass(frozen=True)
 class iOSTag:
     system: Final = "iOS"
     architecture: Final = "#not-implemented"
@@ -1248,7 +1250,7 @@ def diagnose_unsupported(filename: str, supported_tags: frozenset[Tag]) -> str |
         if tag.abi not in supported_abis:
             if reason := _explain_abi_tag(tag.abi):
                 return reason
-            return "Wheel ABI is unsupported: {tag.abi}"
+            return f"Wheel ABI is unsupported: {tag.abi}"
         return None
 
     _, _, _, tags = parse_wheel_filename(filename)
