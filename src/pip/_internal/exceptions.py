@@ -1113,14 +1113,14 @@ class WindowsTag:
 class MacOSTag:
     system: str = field(init=False, default="macOS")
     architecture: str
-    release: str
+    release: tuple[int, int]
 
 
 @dataclass(frozen=True)
 class LinuxTag:
     system: str = field(init=False, default="Linux")
     libc: Literal["glibc", "musl"]
-    libc_version: str
+    libc_version: tuple[int, int]
     architecture: str
 
 
@@ -1144,21 +1144,21 @@ def _parse_platform_tag(
         return WindowsTag(tag.removeprefix("win").lstrip("_"))
 
     if tag.startswith("macosx"):
-        version, arch = _re_parse(r"macosx_(\d+_\d+)_(.+)", tag)
-        return MacOSTag(arch, version.replace("_", "."))
+        major, minor, arch = _re_parse(r"macosx_(\d+)_(\d+)_(.+)", tag)
+        return MacOSTag(arch, (int(major), int(minor)))
 
     if tag.startswith("manylinux"):
         if match := re.match(r"manylinux(1|2010|2014)_(.+)", tag):
             glibc_ver, arch = match.groups()
-            legacy_mapping = {"1": "2.5", "2010": "2.12", "2014": "2.17"}
+            legacy_mapping = {"1": (2, 5), "2010": (2, 12), "2014": (2, 17)}
             return LinuxTag("glibc", legacy_mapping[glibc_ver], arch)
         else:
-            libc_version, arch = _re_parse(r"manylinux_(\d+_\d+)_(.+)", tag)
-            return LinuxTag("glibc", libc_version.replace("_", "."), arch)
+            major, minor, arch = _re_parse(r"manylinux_(\d+)_(\d+)_(.+)", tag)
+            return LinuxTag("glibc", (int(major), int(minor)), arch)
 
     if tag.startswith("musllinux"):
-        libc_version, arch = _re_parse(r"musllinux_(\d+_\d+)_(.+)", tag)
-        return LinuxTag("musl", libc_version.replace("_", "."), arch)
+        major, minor, arch = _re_parse(r"musllinux_(\d+)_(\d+)_(.+)", tag)
+        return LinuxTag("musl", (int(major), int(minor)), arch)
 
     if tag.startswith("ios"):
         return iOSTag()
@@ -1187,13 +1187,18 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
         # TODO: not implemented yet, these platforms are niche.
         return None
 
+    # HACK: we deduce (most of) what this environment supports by inspecting the
+    # supported tags returned by packaging. This is hacky, but it's more reliable
+    # than trying to determine the OS version, libc version, etc. ourselves.
+    known_supported_platforms = [_parse_platform_tag(t) for t in supported_tags]
     supported_archs = {
-        p.architecture
-        for p in [_parse_platform_tag(t) for t in supported_tags]
-        if p is not None
+        p.architecture for p in known_supported_platforms if p is not None
     }
     if tag.architecture not in supported_archs:
         return f"Wheel architecture is unsupported: {tag.architecture}"
+
+    def format_version(version: tuple[int, ...]) -> str:
+        return ".".join(map(str, version))
 
     if isinstance(tag, WindowsTag):
         # Due to Windows' excellent backwards compatibility, this should've been an
@@ -1201,19 +1206,35 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
         return None
 
     elif isinstance(tag, MacOSTag):
-        current_release, _, _ = platform.mac_ver()
+        current_release = max(
+            p.release for p in known_supported_platforms if isinstance(p, MacOSTag)
+        )
         # NOTE: due to the many changes to macOS's versioning scheme, this is imperfect.
         if current_release < tag.release:
-            return f"Wheel requires macOS >= {tag.release} (current: {current_release})"
+            return (
+                f"Wheel requires macOS >= {format_version(tag.release)}"
+                f" (current: {format_version(current_release)})"
+            )
 
     elif isinstance(tag, LinuxTag):
-        sys_libc, sys_libc_ver = platform.libc_ver()
+        sys_libc, _ = platform.libc_ver()
+        sys_libc_ver = max(
+            p.libc_version
+            for p in known_supported_platforms
+            if isinstance(p, LinuxTag) and p.libc == sys_libc
+        )
         if tag.libc != sys_libc:
             return f"Wheel requires {tag.libc} (current: {sys_libc})"
         if sys_libc == "glibc" and sys_libc_ver < tag.libc_version:
-            return f"Wheel requires glibc {tag.libc_version}+ (current: {sys_libc_ver})"
+            return (
+                f"Wheel requires glibc {format_version(tag.libc_version)}+"
+                f" (current: {format_version(sys_libc_ver)})"
+            )
         if sys_libc == "musl" and sys_libc_ver < tag.libc_version:
-            return f"Wheel requires musl {tag.libc_version}+ (current: {sys_libc_ver})"
+            return (
+                f"Wheel requires musl {format_version(tag.libc_version)}+"
+                f" (current: {format_version(sys_libc_ver)})"
+            )
 
     return None
 
