@@ -1039,17 +1039,20 @@ class VenvCreationError(DiagnosticPipError):
         )
 
 
-def _re_parse(pattern: str, text: str) -> tuple[str, ...]:
-    match = re.match(pattern, text)
-    assert match is not None, f"should've matched: {text}"
-    return match.groups()
+def _re_parse(pattern: str, text: str) -> tuple[str, ...] | None:
+    if match := re.match(pattern, text):
+        return match.groups()
+    return None
 
 
 def _explain_python_tag(full_tag: Tag) -> str | None:
     """Try to explain Python incompatibilities, if possible.
 
     Specifically checks Python implementation and version."""
-    impl, version = _re_parse(r"([a-z]+)(\d[\d_]*)", full_tag.interpreter)
+    groups = _re_parse(r"([a-z]+)(\d[\d_]*)", full_tag.interpreter)
+    if not groups:
+        return None
+    impl, version = groups
 
     # Expand abbreviated implementation name if needed.
     for fullname, abbrev in INTERPRETER_SHORT_NAMES.items():
@@ -1140,24 +1143,22 @@ def _parse_platform_tag(
     tag: str,
 ) -> WindowsTag | MacOSTag | LinuxTag | AndroidTag | iOSTag | None:
     tag = tag.lower()
-    if tag.startswith("win"):
-        return WindowsTag(tag.removeprefix("win").lstrip("_"))
+    if tag.startswith("win_"):
+        return WindowsTag(tag.removeprefix("win_"))
 
-    if tag.startswith("macosx"):
-        major, minor, arch = _re_parse(r"macosx_(\d+)_(\d+)_(.+)", tag)
+    if groups := _re_parse(r"macosx_(\d+)_(\d+)_(.+)", tag):
+        major, minor, arch = groups
         return MacOSTag(arch, (int(major), int(minor)))
 
-    if tag.startswith("manylinux"):
-        if match := re.match(r"manylinux(1|2010|2014)_(.+)", tag):
-            glibc_ver, arch = match.groups()
-            legacy_mapping = {"1": (2, 5), "2010": (2, 12), "2014": (2, 17)}
-            return LinuxTag("glibc", legacy_mapping[glibc_ver], arch)
-        else:
-            major, minor, arch = _re_parse(r"manylinux_(\d+)_(\d+)_(.+)", tag)
-            return LinuxTag("glibc", (int(major), int(minor)), arch)
-
-    if tag.startswith("musllinux"):
-        major, minor, arch = _re_parse(r"musllinux_(\d+)_(\d+)_(.+)", tag)
+    if match := re.match(r"manylinux(1|2010|2014)_(.+)", tag):
+        glibc_ver, arch = match.groups()
+        legacy_mapping = {"1": (2, 5), "2010": (2, 12), "2014": (2, 17)}
+        return LinuxTag("glibc", legacy_mapping[glibc_ver], arch)
+    elif groups := _re_parse(r"manylinux_(\d+)_(\d+)_(.+)", tag):
+        major, minor, arch = groups
+        return LinuxTag("glibc", (int(major), int(minor)), arch)
+    if groups := _re_parse(r"musllinux_(\d+)_(\d+)_(.+)", tag):
+        major, minor, arch = groups
         return LinuxTag("musl", (int(major), int(minor)), arch)
 
     if tag.startswith("ios"):
@@ -1204,7 +1205,6 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
         # Due to Windows' excellent backwards compatibility, this should've been an
         # architecture issue but it wasn't, give up.
         return None
-
     elif isinstance(tag, MacOSTag):
         current_release = max(
             p.release for p in known_supported_platforms if isinstance(p, MacOSTag)
@@ -1215,16 +1215,15 @@ def _explain_platform_tag(raw_tag: str, supported_tags: frozenset[str]) -> str |
                 f"Wheel requires macOS >= {format_version(tag.release)}"
                 f" (current: {format_version(current_release)})"
             )
-
     elif isinstance(tag, LinuxTag):
         sys_libc, _ = platform.libc_ver()
+        if tag.libc != sys_libc:
+            return f"Wheel requires {tag.libc} (current: {sys_libc})"
         sys_libc_ver = max(
             p.libc_version
             for p in known_supported_platforms
             if isinstance(p, LinuxTag) and p.libc == sys_libc
         )
-        if tag.libc != sys_libc:
-            return f"Wheel requires {tag.libc} (current: {sys_libc})"
         if sys_libc == "glibc" and sys_libc_ver < tag.libc_version:
             return (
                 f"Wheel requires glibc {format_version(tag.libc_version)}+"
@@ -1291,7 +1290,7 @@ def diagnose_unsupported(filename: str, supported_tags: frozenset[Tag]) -> str |
     return diagnose_one(next(iter(tags)))
 
 
-class IncompatibleWheelDiagnostic(DiagnosticPipError):
+class IncompatibleWheelDiagnostic(DiagnosticPipError, UnsupportedWheel):
     reference = "incompatible-wheel"
 
     def __init__(self, wheel: Wheel, supported_tags: frozenset[Tag]) -> None:

@@ -503,6 +503,9 @@ class TestIncompatibleWheelDiagnostic:
             ("android_27_arm64_v8a", AndroidTag()),
             ("ios_13_0_arm64_iphonesimulator", iOSTag()),
             ("freebsd_13_x86_64", None),
+            ("windows_amd64", None),
+            ("linux_x86_64", None),
+            ("macosx_notreal", None),
         ],
     )
     def test_parse_platform_tag(self, raw_tag: str, expected: object) -> None:
