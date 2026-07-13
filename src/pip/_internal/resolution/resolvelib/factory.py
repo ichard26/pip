@@ -30,6 +30,7 @@ from pip._internal.exceptions import (
     MetadataInvalid,
     UnsupportedPythonVersion,
     UnsupportedWheel,
+    diagnose_unsupported,
 )
 from pip._internal.index.package_finder import PackageFinder
 from pip._internal.metadata import BaseDistribution, get_default_environment
@@ -140,7 +141,13 @@ class Factory:
         supported_tags = self._finder.target_python.get_unsorted_tags()
         if wheel.supported(supported_tags):
             return
-        raise IncompatibleWheelDiagnostic(wheel, frozenset(supported_tags))
+        if self._finder.target_python.is_current_interpreter():
+            reason = diagnose_unsupported(wheel.filename, frozenset(supported_tags))
+        else:
+            # It's not worth the complexity to attempt to deduce an explanation
+            # when we're targeting a different interpreter.
+            reason = None
+        raise IncompatibleWheelDiagnostic(wheel.filename, reason)
 
     def _make_extras_candidate(
         self,

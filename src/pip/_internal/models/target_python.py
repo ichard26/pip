@@ -66,6 +66,17 @@ class TargetPython:
         self._valid_tags: list[Tag] | None = None
         self._valid_tags_set: set[Tag] | None = None
 
+    def is_current_interpreter(self) -> bool:
+        """
+        Does this target Python match the current interpreter?
+        """
+        return not bool(
+            self.abis
+            or self.implementation
+            or self.platforms
+            or (self.py_version_info != sys.version_info[:3])
+        )
+
     def format_given(self) -> str:
         """
         Format the given, non-None attributes for display.

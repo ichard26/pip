@@ -31,7 +31,6 @@ from pip._internal.exceptions import (
     diagnose_unsupported,
     iOSTag,
 )
-from pip._internal.models.wheel import Wheel
 from pip._internal.utils.compatibility_tags import get_supported
 
 from tests.lib import cpython_only, linux_only, macos_only
@@ -541,7 +540,11 @@ class TestIncompatibleWheelDiagnostic:
         )
 
         filename = f"sample-1.0-cp{current}-abi3-any.whl"
-        assert diagnose_unsupported(filename, self.supported_tags) is None
+        with patch(
+            "pip._internal.exceptions.sysconfig.get_config_var",
+            _mock_get_config_var(Py_GIL_DISABLED=0),
+        ):
+            assert diagnose_unsupported(filename, self.supported_tags) is None
 
     def test_diagnose_python_implementation(self) -> None:
         if sys.implementation.name.lower() == "pypy":
@@ -722,8 +725,8 @@ class TestIncompatibleWheelDiagnostic:
         current_major = sys.version_info.major
         future_major = current_major + 1
         filename = f"sample-1.0-py{future_major}-none-any.whl"
-
-        err = IncompatibleWheelDiagnostic(Wheel(filename), self.supported_tags)
+        reason = diagnose_unsupported(filename, self.supported_tags)
+        err = IncompatibleWheelDiagnostic(filename, reason)
         assert rendered(err) == textwrap.dedent(f"""\
             error: incompatible-wheel
 

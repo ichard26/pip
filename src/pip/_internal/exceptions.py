@@ -40,7 +40,6 @@ if TYPE_CHECKING:
 
     from pip._internal.metadata import BaseDistribution
     from pip._internal.models.link import Link
-    from pip._internal.models.wheel import Wheel
     from pip._internal.network.download import _FileDownload
     from pip._internal.req.req_install import InstallRequirement
 
@@ -1293,11 +1292,10 @@ def diagnose_unsupported(filename: str, supported_tags: frozenset[Tag]) -> str |
 class IncompatibleWheelDiagnostic(DiagnosticPipError, UnsupportedWheel):
     reference = "incompatible-wheel"
 
-    def __init__(self, wheel: Wheel, supported_tags: frozenset[Tag]) -> None:
-        reason = diagnose_unsupported(wheel.filename, supported_tags)
+    def __init__(self, wheel_filename: str, reason: str | None) -> None:
         hint = "Run 'pip debug -v' for a list of compatible tags for your system."
         super().__init__(
-            message=Text.assemble((wheel.filename, "cyan"), " is incompatible"),
+            message=Text.assemble((wheel_filename, "cyan"), " is incompatible"),
             context=Text(reason) if reason else None,
             hint_stmt=hint,
         )
