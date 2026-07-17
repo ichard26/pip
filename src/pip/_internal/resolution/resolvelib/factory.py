@@ -193,6 +193,7 @@ class Factory:
         template: InstallRequirement,
         name: NormalizedName | None,
         version: Version | None,
+        editable: bool = False,
     ) -> BaseCandidate | None:
         # TODO: Check already installed candidate, and use it if the link and
         # editable flag match.
@@ -437,12 +438,13 @@ class Factory:
                 extras = frozenset(parsed_requirement.extras)
 
         for link in constraint.links:
-            self._fail_if_link_is_unsupported_wheel(link)
+            self._fail_if_link_is_unsupported_wheel(link.link)
             base_candidate = self._make_base_candidate_from_link(
-                link,
-                template=install_req_from_link_and_ireq(link, template),
+                link.link,
+                template=install_req_from_link_and_ireq(link.link, template),
                 name=canonicalize_name(base_identifier),
                 version=None,
+                editable=link.editable,
             )
             if base_candidate is None:
                 continue
