@@ -358,7 +358,7 @@ def test_new_resolver_editable_satisfies_direct_url_dep(
                 install_requires=["dep @ {dep_url}"],
             )
             """))
-    script.pip(
+    result = script.pip(
         "install",
         "--no-build-isolation",
         "--no-cache-dir",
@@ -371,6 +371,8 @@ def test_new_resolver_editable_satisfies_direct_url_dep(
     script.assert_installed(base="0.1.0", dep="0.1.0")
     script.assert_installed_editable("base")
     script.assert_installed_editable("dep")
+    assert "Building editable for base" in result.stdout
+    assert "Building editable for dep" in result.stdout
 
 
 @pytest.mark.xfail
@@ -388,6 +390,7 @@ def test_new_resolver_editable_satisfies_equivalent_direct_url_dep(
         script,
         name="base",
         version="0.1",
+        # This URI includes a localhost host which semantically does nothing.
         install_requires=[f"dep @ {_to_localhost_uri(dep_path)}"],
     )
 
@@ -406,7 +409,9 @@ def test_new_resolver_editable_satisfies_equivalent_direct_url_dep(
     script.assert_installed_editable("dep")
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail(
+    reason="needs a project-wide decision to support relative direct URLs or not"
+)
 @pytest.mark.parametrize("is_editable_relative", [True, False])
 def test_new_resolver_relative_editable_satisfies_equivalent_direct_url_dep(
     script: PipTestEnvironment, is_editable_relative: bool
@@ -426,7 +431,7 @@ def test_new_resolver_relative_editable_satisfies_equivalent_direct_url_dep(
         install_requires=[f"dep @ file:{relative_dep_path.as_posix()}"],
     )
 
-    script.pip(
+    result = script.pip(
         "install",
         "--no-build-isolation",
         "--no-cache-dir",
@@ -439,148 +444,178 @@ def test_new_resolver_relative_editable_satisfies_equivalent_direct_url_dep(
     script.assert_installed(base="0.1", dep="0.1")
     script.assert_installed_editable("base")
     script.assert_installed_editable("dep")
+    assert "Building editable for base" in result.stdout
+    assert "Building editable for dep" in result.stdout
 
 
-def test_new_resolver_editable_priority_preserves_top_level_regular_extras(
-    script: PipTestEnvironment,
-) -> None:
-    extra_dep_path = create_test_package_with_setup(
-        script, name="extra_dep", version="0.1.0"
+class TestEditablePriority:
+    def test_preserve_top_level_regular_extras(
+        self, script: PipTestEnvironment
+    ) -> None:
+        extra_dep_path = create_test_package_with_setup(
+            script, name="extra_dep", version="0.1.0"
+        )
+        pkg_path = create_test_package_with_setup(
+            script,
+            name="pkg",
+            version="0.1.0",
+            extras_require={"extra": [f"extra_dep @ {extra_dep_path.as_uri()}"]},
+        )
+        result = script.pip(
+            "install",
+            "--no-build-isolation",
+            "--no-cache-dir",
+            "--no-index",
+            f"pkg[extra] @ {pkg_path.as_uri()}",
+            "-e",
+            pkg_path,
+        )
+        script.assert_installed(pkg="0.1.0", extra_dep="0.1.0")
+        script.assert_installed_editable("pkg")
+        assert "Building editable for pkg" in result.stdout
+
+    def test_preserve_top_level_editable_extras(
+        self, script: PipTestEnvironment
+    ) -> None:
+        extra_dep_path = create_test_package_with_setup(
+            script, name="extra_dep", version="0.1.0"
+        )
+        pkg_path = create_test_package_with_setup(
+            script,
+            name="pkg",
+            version="0.1.0",
+            extras_require={"extra": [f"extra_dep @ {extra_dep_path.as_uri()}"]},
+        )
+        result = script.pip(
+            "install",
+            "--no-build-isolation",
+            "--no-cache-dir",
+            "--no-index",
+            f"pkg @ {pkg_path.as_uri()}",
+            "-e",
+            f"{pkg_path}[extra]",
+        )
+        script.assert_installed(pkg="0.1.0", extra_dep="0.1.0")
+        script.assert_installed_editable("pkg")
+        assert "Building editable for pkg" in result.stdout
+
+    def test_preserve_regular_extras_dep(self, script: PipTestEnvironment) -> None:
+        """Extras from a regular direct URL requirement should be preserved
+        even if the requirement was satisfied by an editable to the same location.
+        """
+        extra_path = create_test_package_with_setup(
+            script, name="extra", version="0.1.0"
+        )
+        dep_path = create_test_package_with_setup(
+            script,
+            name="dep",
+            version="0.1.0",
+            extras_require={"extra": [f"extra @ {extra_path.as_uri()}"]},
+        )
+        root_path = script.scratch_path / "root"
+        root_path.mkdir()
+        root_path.joinpath("setup.py").write_text(textwrap.dedent(f"""
+                from setuptools import setup
+                setup(
+                    name="root",
+                    version="0.1.0",
+                    install_requires=["dep[extra] @ {dep_path.as_uri()}"],
+                )
+                """))
+        result = script.pip(
+            "install",
+            "--no-build-isolation",
+            "--no-cache-dir",
+            "--no-index",
+            root_path,
+            "-e",
+            dep_path,
+        )
+        script.assert_installed(root="0.1.0", dep="0.1.0", extra="0.1.0")
+        script.assert_installed_editable("dep")
+        assert "Building editable for dep" in result.stdout
+
+    @pytest.mark.parametrize("use_direct_url", [False, True])
+    def test_over_top_level_regular_requirement(
+        self, use_direct_url: bool, script: PipTestEnvironment
+    ) -> None:
+        """
+        pip install -e pkg pkg should install pkg in editable mode without
+        building pkg as a wheel.
+
+        This is different from editable_satisfies_direct_url_dep since the
+        regular requirement is user provided (and thus resolved much earlier).
+        """
+        pkg_path = create_test_package_with_setup(script, name="pkg", version="0.1.0")
+        pkg_url = pkg_path.as_uri()
+        result = script.pip(
+            "install",
+            "--no-build-isolation",
+            "--no-cache-dir",
+            "--no-index",
+            f"pkg @ {pkg_url}" if use_direct_url else pkg_path,
+            "-e",
+            pkg_path,
+        )
+        script.assert_installed(pkg="0.1.0")
+        script.assert_installed_editable("pkg")
+        assert "Building editable for pkg" in result.stdout
+
+    @pytest.mark.xfail(
+        reason="needs a project-wide decision to support relative direct URLs or not"
     )
-    pkg_path = create_test_package_with_setup(
-        script,
-        name="pkg",
-        version="0.1.0",
-        extras_require={"extra": [f"extra_dep @ {extra_dep_path.as_uri()}"]},
-    )
-    script.pip(
-        "install",
-        "--no-build-isolation",
-        "--no-cache-dir",
-        "--no-index",
-        f"pkg[extra] @ {pkg_path.as_uri()}",
-        "-e",
-        pkg_path,
-    )
-    script.assert_installed(pkg="0.1.0", extra_dep="0.1.0")
-    script.assert_installed_editable("pkg")
+    def test_over_top_level_regular_relative_requirement(
+        self, script: PipTestEnvironment
+    ) -> None:
+        """
+        pip install -e pkg file:pkg should install pkg in editable mode despite
+        the difference in scheme.
+        """
+        pkg_path = create_test_package_with_setup(script, name="pkg", version="0.1.0")
+        relative_pkg_path = pkg_path.relative_to(script.scratch_path)
+        result = script.pip(
+            "install",
+            "--no-build-isolation",
+            "--no-cache-dir",
+            "--no-index",
+            f"file:{relative_pkg_path.as_posix()}",
+            "-e",
+            relative_pkg_path,
+        )
+        script.assert_installed(pkg="0.1.0")
+        script.assert_installed_editable("pkg")
+        assert "Building editable for pkg" in result.stdout
 
+    @pytest.mark.parametrize("use_req_file", [False, True])
+    def test_over_top_level_regular_requirement_constraint(
+        self, use_req_file: bool, script: PipTestEnvironment
+    ) -> None:
+        """
+        pip install -e pkg pkg should install pkg in editable mode without
+        building pkg as a wheel, where pkg is constrained to the same URL.
+        """
+        pkg_path = create_test_package_with_setup(script, name="pkg", version="0.1.0")
+        pkg_url = pkg_path.as_uri()
+        constraints_file = script.temporary_file("c.txt", f"pkg @ {pkg_url}")
+        req_file = script.temporary_file(
+            "r.txt", "\n".join([f"-e {pkg_path.as_posix()}", "pkg"])
+        )
 
-def test_new_resolver_editable_priority_preserves_regular_extras_dep(
-    script: PipTestEnvironment,
-) -> None:
-    """Extras from a regular direct URL requirement should be preserved
-    even if the requirement was sastified by an editable to the same location.
-    """
-    extra_path = create_test_package_with_setup(script, name="extra", version="0.1.0")
-    dep_path = create_test_package_with_setup(
-        script,
-        name="dep",
-        version="0.1.0",
-        extras_require={"extra": [f"extra @ {extra_path.as_uri()}"]},
-    )
-    root_path = script.scratch_path / "root"
-    root_path.mkdir()
-    root_path.joinpath("setup.py").write_text(textwrap.dedent(f"""
-            from setuptools import setup
-            setup(
-                name="root",
-                version="0.1.0",
-                install_requires=["dep[extra] @ {dep_path.as_uri()}"],
-            )
-            """))
-    script.pip(
-        "install",
-        "--no-build-isolation",
-        "--no-cache-dir",
-        "--no-index",
-        root_path,
-        "-e",
-        dep_path,
-    )
-    script.assert_installed(root="0.1.0", dep="0.1.0", extra="0.1.0")
-    script.assert_installed_editable("dep")
-
-
-@pytest.mark.parametrize("use_direct_url", [False, True])
-def test_new_resolver_editable_priority_over_top_level_regular_requirement(
-    use_direct_url: bool, script: PipTestEnvironment
-) -> None:
-    """
-    pip install -e pkg pkg should install pkg in editable mode without
-    building pkg as a wheel.
-
-    This is different from editable_satisfies_direct_url_dep since the
-    regular requirement is user provided (and thus resolved much earlier).
-    """
-    pkg_path = create_test_package_with_setup(script, name="pkg", version="0.1.0")
-    pkg_url = pkg_path.as_uri()
-    script.pip(
-        "install",
-        "--no-build-isolation",
-        "--no-cache-dir",
-        "--no-index",
-        f"pkg @ {pkg_url}" if use_direct_url else pkg_path,
-        "-e",
-        pkg_path,
-    )
-    script.assert_installed(pkg="0.1.0")
-    script.assert_installed_editable("pkg")
-
-
-@pytest.mark.xfail
-def test_new_resolver_editable_priority_over_top_level_regular_relative_requirement(
-    script: PipTestEnvironment,
-) -> None:
-    """
-    pip install -e pkg file:pkg should install pkg in editable mode despite
-    the difference in scheme.
-    """
-    pkg_path = create_test_package_with_setup(script, name="pkg", version="0.1.0")
-    relative_pkg_path = pkg_path.relative_to(script.scratch_path)
-    script.pip(
-        "install",
-        "--no-build-isolation",
-        "--no-cache-dir",
-        "--no-index",
-        f"file:{relative_pkg_path.as_posix()}",
-        "-e",
-        relative_pkg_path,
-    )
-    script.assert_installed(pkg="0.1.0")
-    script.assert_installed_editable("pkg")
-
-
-@pytest.mark.parametrize("use_req_file", [False, True])
-def test_new_resolver_editable_priority_over_top_level_regular_requirement_constraint(
-    use_req_file: bool, script: PipTestEnvironment
-) -> None:
-    """
-    pip install -e pkg pkg should install pkg in editable mode without
-    building pkg as a wheel, where pkg is constrained to the same URL.
-    """
-    pkg_path = create_test_package_with_setup(script, name="pkg", version="0.1.0")
-    pkg_url = pkg_path.as_uri()
-    constraints_file = script.temporary_file("c.txt", f"pkg @ {pkg_url}")
-    req_file = script.temporary_file(
-        "r.txt", "\n".join([f"-e {pkg_path.as_posix()}", "pkg"])
-    )
-
-    args: list[str | Path] = (
-        ["-r", req_file] if use_req_file else ["pkg", "-e", pkg_path]
-    )
-    result = script.pip(
-        "install",
-        "--no-build-isolation",
-        "--no-cache-dir",
-        "--no-index",
-        "--constraint",
-        constraints_file,
-        *args,
-    )
-    script.assert_installed(pkg="0.1.0")
-    script.assert_installed_editable("pkg")
-    assert "Getting requirements to build wheel" not in result.stdout
+        args: list[str | Path] = (
+            ["-r", req_file] if use_req_file else ["pkg", "-e", pkg_path]
+        )
+        result = script.pip(
+            "install",
+            "--no-build-isolation",
+            "--no-cache-dir",
+            "--no-index",
+            "--constraint",
+            constraints_file,
+            *args,
+        )
+        script.assert_installed(pkg="0.1.0")
+        script.assert_installed_editable("pkg")
+        assert "Getting requirements to build wheel" not in result.stdout
 
 
 @pytest.mark.parametrize(
