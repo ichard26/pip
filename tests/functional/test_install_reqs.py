@@ -917,34 +917,129 @@ def test_config_settings_local_to_package(
     assert "--verbose" not in simple2_args
 
 
-def test_editable_constraints(script: PipTestEnvironment, tmp_path: Path) -> None:
-    pkgs_path = tmp_path / "pkgs"
-    pkgs_path.mkdir()
-    pkga_path = pkgs_path / "pkga"
-    pkga_path.mkdir()
-    pkga_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
-            [project]
-            name = "pkga"
-            version = "1.1"
-            dependencies = ["pkgb"]
-            """))
-    pkgb_path = pkgs_path / "pkgb"
-    pkgb_path.mkdir()
-    pkgb_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
-            [project]
-            name = "pkgb"
-            version = "1.2"
-            dependencies = ["singlemodule==0.0.1"]
-            """))
-    constraints_path = tmp_path / "constraints.txt"
-    constraints_path.write_text(textwrap.dedent(f"""\
-            -e "pkga @ {pkga_path.as_uri()}"
-            -e "pkgb @ {pkgb_path.as_uri()}"
-            """))
-    script.pip_install_local("pkga", "-c", constraints_path)
-    script.assert_installed(singlemodule="0.0.1")
-    script.assert_installed_editable("pkga")
-    script.assert_installed_editable("pkgb")
+class TestEditableConstraints:
+    def test_single(self, script: PipTestEnvironment, tmp_path: Path) -> None:
+        pkga_path = tmp_path / "src" / "pkga"
+        pkga_path.mkdir(parents=True)
+        pkga_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
+                [project]
+                name = "pkga"
+                version = "1.1"
+                """))
+        constraints_path = tmp_path / "constraints.txt"
+        constraints_path.write_text(f'-e "pkga @ {pkga_path.as_uri()}"')
+
+        result = script.pip_install_local("pkga", "-c", constraints_path)
+        script.assert_installed_editable("pkga")
+        # Verify that non-editable backend calls aren't being performed.
+        assert "Getting requirements to build wheel" not in result.stdout
+        assert "Building editable for pkga" in result.stdout
+
+    def test_dependency_chain(self, script: PipTestEnvironment, tmp_path: Path) -> None:
+        pkgs_path = tmp_path / "pkgs"
+        pkgs_path.mkdir()
+        pkga_path = pkgs_path / "pkga"
+        pkga_path.mkdir()
+        pkga_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
+                [project]
+                name = "pkga"
+                version = "1.1"
+                dependencies = ["pkgb"]
+                """))
+        pkgb_path = pkgs_path / "pkgb"
+        pkgb_path.mkdir()
+        pkgb_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
+                [project]
+                name = "pkgb"
+                version = "1.2"
+                dependencies = ["singlemodule==0.0.1"]
+                """))
+        constraints_path = tmp_path / "constraints.txt"
+        constraints_path.write_text(textwrap.dedent(f"""\
+                -e "pkga @ {pkga_path.as_uri()}"
+                -e "pkgb @ {pkgb_path.as_uri()}"
+                """))
+        result = script.pip_install_local("pkga", "-c", constraints_path)
+        script.assert_installed(singlemodule="0.0.1")
+        script.assert_installed_editable("pkga")
+        script.assert_installed_editable("pkgb")
+        assert "Building editable for pkga" in result.stdout
+        assert "Building editable for pkgb" in result.stdout
+
+    def test_dependency_chain_extra(
+        self, script: PipTestEnvironment, tmp_path: Path
+    ) -> None:
+        pkgs_path = tmp_path / "pkgs"
+        pkgs_path.mkdir()
+        pkga_path = pkgs_path / "pkga"
+        pkga_path.mkdir()
+        pkga_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
+                [project]
+                name = "pkga"
+                version = "1.1"
+
+                [project.optional-dependencies]
+                extra = ["pkgb[extra]"]
+                """))
+        pkgb_path = pkgs_path / "pkgb"
+        pkgb_path.mkdir()
+        pkgb_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
+                [project]
+                name = "pkgb"
+                version = "1.2"
+
+                [project.optional-dependencies]
+                extra = ["singlemodule==0.0.1"]
+                """))
+        constraints_path = tmp_path / "constraints.txt"
+        constraints_path.write_text(textwrap.dedent(f"""\
+                -e "pkga @ {pkga_path.as_uri()}"
+                -e "pkgb @ {pkgb_path.as_uri()}"
+                """))
+        result = script.pip_install_local("pkga[extra]", "-c", constraints_path)
+        script.assert_installed(singlemodule="0.0.1")
+        script.assert_installed_editable("pkga")
+        script.assert_installed_editable("pkgb")
+        assert "Building editable for pkga" in result.stdout
+        assert "Building editable for pkgb" in result.stdout
+
+    @pytest.mark.parametrize("type", ["path", "direct-url"])
+    def test_matching_regular_requirement(
+        self, script: PipTestEnvironment, tmp_path: Path, type: str
+    ) -> None:
+        pkga_path = tmp_path / "src" / "pkga"
+        pkga_path.mkdir(parents=True)
+        pkga_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
+                [project]
+                name = "pkga"
+                version = "1.1"
+                """))
+        constraints_path = tmp_path / "constraints.txt"
+        constraints_path.write_text(f'-e "pkga @ {pkga_path.as_uri()}"')
+        req = str(pkga_path) if type == "path" else f"pkga @ {pkga_path.as_uri()}"
+
+        result = script.pip_install_local(req, "-c", constraints_path)
+        script.assert_installed_editable("pkga")
+        assert "Building editable for pkga" in result.stdout
+
+    @pytest.mark.parametrize("type", ["path", "direct-url"])
+    def test_matching_regular_and_editable_requirement(
+        self, script: PipTestEnvironment, tmp_path: Path, type: str
+    ) -> None:
+        pkga_path = tmp_path / "src" / "pkga"
+        pkga_path.mkdir(parents=True)
+        pkga_path.joinpath("pyproject.toml").write_text(textwrap.dedent("""\
+                [project]
+                name = "pkga"
+                version = "1.1"
+                """))
+        constraints_path = tmp_path / "constraints.txt"
+        constraints_path.write_text(f'-e "pkga @ {pkga_path.as_uri()}"')
+        req = str(pkga_path) if type == "path" else f"pkga @ {pkga_path.as_uri()}"
+
+        result = script.pip_install_local(req, "-e" + req, "-c", constraints_path)
+        script.assert_installed_editable("pkga")
+        assert "Building editable for pkga" in result.stdout
 
 
 class TestEditableDirectURL:
