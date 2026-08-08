@@ -51,7 +51,7 @@ class RateLimiter:
         self._last_update = time.time()
 
 
-class _NoopSpinner(SpinnerInterface):
+class NoopSpinner(SpinnerInterface):
     """No-op spinner for when absolutely zero output is desired."""
 
     def start(self) -> None:
@@ -61,7 +61,7 @@ class _NoopSpinner(SpinnerInterface):
         pass
 
 
-class _RichSpinner(SpinnerInterface):
+class RichSpinner(SpinnerInterface):
     """Status spinner for interactive terminals."""
 
     def __init__(self, label: str, console: Console) -> None:
@@ -98,7 +98,7 @@ class _RichSpinner(SpinnerInterface):
                 self._console.print(final_line)
 
 
-class _NonInteractiveSpinner(SpinnerInterface):
+class NonInteractiveSpinner(SpinnerInterface):
     """
     Used for dumb terminals, non-interactive installs (no tty), etc.
     We still print updates occasionally (once every 60 seconds by default) to
@@ -147,14 +147,14 @@ def open_spinner(
     """
     if not logger.isEnabledFor(logging.INFO):
         # Don't write *anything* if --quiet is given.
-        yield _NoopSpinner()
+        yield NoopSpinner()
         return
 
     console = console or get_console()
     if sys.stdout.isatty():
-        spinner: SpinnerInterface = _RichSpinner(label, console)
+        spinner: SpinnerInterface = RichSpinner(label, console)
     else:
-        spinner = _NonInteractiveSpinner(label, console)
+        spinner = NonInteractiveSpinner(label, console)
     if autostart:
         spinner.start()
     try:

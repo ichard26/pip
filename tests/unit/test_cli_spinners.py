@@ -66,10 +66,10 @@ def test_finish(
 @pytest.mark.parametrize(
     "level, isatty, expected_type",
     [
-        (logging.INFO, True, spinners._RichSpinner),
-        (logging.WARNING, True, spinners._NoopSpinner),
-        (logging.INFO, False, spinners._NonInteractiveSpinner),
-        (logging.ERROR, False, spinners._NoopSpinner),
+        (logging.INFO, True, spinners.RichSpinner),
+        (logging.WARNING, True, spinners.NoopSpinner),
+        (logging.INFO, False, spinners.NonInteractiveSpinner),
+        (logging.ERROR, False, spinners.NoopSpinner),
     ],
 )
 def test_selects_spinner_for_environment(
@@ -83,7 +83,7 @@ def test_selects_spinner_for_environment(
 
 @pytest.mark.parametrize(
     "isatty, spinner_type",
-    [(True, spinners._RichSpinner), (False, spinners._NonInteractiveSpinner)],
+    [(True, spinners.RichSpinner), (False, spinners.NonInteractiveSpinner)],
 )
 @pytest.mark.parametrize("autostart", [False, True])
 def test_starts_spinner_when_requested(
