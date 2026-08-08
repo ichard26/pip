@@ -143,7 +143,7 @@ class SubprocessBuildEnvironmentInstaller:
         identify_requirement = (
             f" for {for_req.name}" if for_req and for_req.name else ""
         )
-        with open_spinner(f"Installing {kind}") as spinner:
+        with open_spinner(f"Installing {kind}", autostart=False) as spinner:
             call_subprocess(
                 args,
                 command_desc=f"installing {kind}{identify_requirement}",

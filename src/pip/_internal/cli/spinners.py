@@ -29,6 +29,7 @@ NONINTERACTIVE_SPINNER_INTERVAL: Final = 60
 
 
 class SpinnerInterface(Protocol):
+    def start(self) -> None: ...
     def finish(self, label: str) -> None: ...
 
 
@@ -47,6 +48,9 @@ class RateLimiter:
 
 
 class _NoopSpinner(SpinnerInterface):
+    def start(self) -> None:
+        pass
+
     def finish(self, label: str) -> None:
         pass
 
@@ -66,16 +70,13 @@ class _RichSpinner(SpinnerInterface):
         self._spinner_text = ""
         self._finished = False
         self._indent = get_indentation() * " "
+        self._live: Live | None = None
 
     def __enter__(self) -> Self:
-        self._live = Live(
-            self, refresh_per_second=SPINS_PER_SECOND, console=self._console
-        )
-        self._live.__enter__()
         return self
 
     def __exit__(self, *args: Any, **kwargs: Any) -> None:
-        self._live.__exit__(*args, **kwargs)
+        self.finish("unknown")
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -94,11 +95,22 @@ class _RichSpinner(SpinnerInterface):
 
         return Text.assemble(self._indent, self.label, " ... ", self._spinner_text)
 
+    def start(self) -> None:
+        self._live = Live(
+            self, refresh_per_second=SPINS_PER_SECOND, console=self._console
+        )
+        self._live.start(refresh=True)
+
     def finish(self, status: str) -> None:
         """Stop spinning and set a final status message."""
         if not self._finished:
-            self._spinner_text = status
             self._finished = True
+            if self._live is not None:
+                self._spinner_text = status
+                self._live.stop()
+            else:
+                final_line = Text.assemble(self._indent, self.label, " ... ", status)
+                self._console.print(final_line)
 
 
 class _NonInteractiveSpinner(SpinnerInterface):
@@ -112,22 +124,19 @@ class _NonInteractiveSpinner(SpinnerInterface):
     def __init__(self, label: str, console: Console) -> None:
         self._label = label
         self._console = console
-        self._final_status = "unknown"
         self._indent = get_indentation() * " "
+        self._thread: Thread | None = None
         self._finish_event = Event()
+        self._print_line("started")
 
     def __enter__(self) -> Self:
-        self._print_line("started")
-        self._thread = Thread(target=self._report_progress)
-        self._thread.start()
         return self
 
     def __exit__(self, *args: Any, **kwargs: Any) -> None:
         # Normally this finish() is called before leaving the spinner context,
         # but an unhandled exception may break this, so defensively tell the
         # thread to stop (to avoid a possible hang).
-        self._finish_event.set()
-        self._thread.join()
+        self.finish("unknown")
 
     def _print_line(self, message: str) -> None:
         line = Text(f"{self._indent}{self._label}: {message}")
@@ -137,18 +146,21 @@ class _NonInteractiveSpinner(SpinnerInterface):
         while not self._finish_event.wait(NONINTERACTIVE_SPINNER_INTERVAL):
             self._print_line("still running ...")
 
-        # Finish event was set, we're done here.
-        self._print_line(f"finished with status '{self._final_status}'")
+    def start(self) -> None:
+        self._thread = Thread(target=self._report_progress)
+        self._thread.start()
 
     def finish(self, status: str) -> None:
         if not self._finish_event.is_set():
-            self._final_status = status
             self._finish_event.set()
+            if self._thread is not None:
+                self._thread.join()
+            self._print_line(f"finished with status '{status}'")
 
 
 @contextlib.contextmanager
 def open_spinner(
-    label: str, console: Console | None = None
+    label: str, console: Console | None = None, *, autostart: bool = True
 ) -> Generator[SpinnerInterface]:
     if not logger.isEnabledFor(logging.INFO):
         # Don't show spinner if --quiet is given.
@@ -158,6 +170,8 @@ def open_spinner(
     spinner_cls = _RichSpinner if sys.stdout.isatty() else _NonInteractiveSpinner
     with spinner_cls(label, console or get_console()) as spinner:
         try:
+            if autostart:
+                spinner.start()
             yield spinner
         except KeyboardInterrupt:
             spinner.finish("canceled")
