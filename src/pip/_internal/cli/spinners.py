@@ -6,7 +6,8 @@ import logging
 import sys
 import time
 from collections.abc import Generator
-from typing import IO, Final
+from threading import Event, Thread
+from typing import IO, Any, Final, Protocol, Self
 
 from pip._vendor.rich.console import (
     Console,
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 SPINNER_CHARS: Final = r"-\|/"
 SPINS_PER_SECOND: Final = 8
+NONINTERACTIVE_SPINNER_INTERVAL: Final = 60
 
 
 class SpinnerInterface:
@@ -152,7 +154,14 @@ def open_spinner(message: str) -> Generator[SpinnerInterface, None, None]:
         spinner.finish("done")
 
 
-class _PipRichSpinner:
+class _PipSpinnerInterface(Protocol):
+    def __init__(self, label: str, console: Console) -> None: ...
+    def __enter__(self) -> Self: ...
+    def __exit__(self, *args: Any, **kwargs: Any) -> None: ...
+    def finish(self, label: str) -> None: ...
+
+
+class _PipRichSpinner(_PipSpinnerInterface):
     """
     Custom rich spinner that matches the style of the legacy spinners.
 
@@ -160,12 +169,23 @@ class _PipRichSpinner:
         which will call render() automatically at the appropriate time.
     """
 
-    def __init__(self, label: str) -> None:
+    def __init__(self, label: str, console: Console) -> None:
         self.label = label
+        self._console = console
         self._spin_cycle = itertools.cycle(SPINNER_CHARS)
         self._spinner_text = ""
         self._finished = False
         self._indent = get_indentation() * " "
+
+    def __enter__(self) -> Self:
+        self._live = Live(
+            self, refresh_per_second=SPINS_PER_SECOND, console=self._console
+        )
+        self._live.__enter__()
+        return self
+
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+        self._live.__exit__(*args, **kwargs)
 
     def __rich_console__(
         self, console: Console, options: ConsoleOptions
@@ -190,6 +210,50 @@ class _PipRichSpinner:
         self._finished = True
 
 
+class _PipNonInteractiveRichSpinner(_PipSpinnerInterface):
+    """
+    Used for dumb terminals, non-interactive installs (no tty), etc.
+    We still print updates occasionally (once every 60 seconds by default) to
+    act as a keep-alive for systems like Travis-CI that take lack-of-output as
+    an indication that a task has frozen.
+    """
+
+    def __init__(self, label: str, console: Console) -> None:
+        self._label = label
+        self._console = console
+        self._final_status = "unknown"
+        self._indent = get_indentation() * " "
+        self._finish_event = Event()
+
+    def __enter__(self) -> Self:
+        self._print_line("started")
+        self._thread = Thread(target=self._report_progress)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+        # Normally this finish() is called before leaving the spinner context,
+        # but an unhandled exception may break this, so defensively tell the
+        # thread to stop (to avoid a possible hang).
+        self._finish_event.set()
+        self._thread.join()
+
+    def _print_line(self, message: str) -> None:
+        line = Text(f"{self._indent}{self._label}: {message}")
+        self._console.print(line)
+
+    def _report_progress(self) -> None:
+        while not self._finish_event.wait(NONINTERACTIVE_SPINNER_INTERVAL):
+            self._print_line("still running ...")
+
+        # Finish event was set, we're done here.
+        self._print_line(f"finished with status '{self._final_status}'")
+
+    def finish(self, status: str) -> None:
+        self._final_status = status
+        self._finish_event.set()
+
+
 @contextlib.contextmanager
 def open_rich_spinner(label: str, console: Console | None = None) -> Generator[None]:
     if not logger.isEnabledFor(logging.INFO):
@@ -198,8 +262,11 @@ def open_rich_spinner(label: str, console: Console | None = None) -> Generator[N
         return
 
     console = console or get_console()
-    spinner = _PipRichSpinner(label)
-    with Live(spinner, refresh_per_second=SPINS_PER_SECOND, console=console):
+    if sys.stdout.isatty():
+        spinner: _PipSpinnerInterface = _PipRichSpinner(label, console)
+    else:
+        spinner = _PipNonInteractiveRichSpinner(label, console)
+    with spinner:
         try:
             yield
         except KeyboardInterrupt:
