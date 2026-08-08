@@ -23,6 +23,16 @@ NONINTERACTIVE_SPINNER_INTERVAL: Final = 60
 
 
 class SpinnerInterface(Protocol):
+    """Common interface for status spinners.
+
+    These spinners must be manually start()ed and finish()ed. If finish()
+    is called when the spinner is already done, it will be a no-op,
+    allowing for easier (and more robust) error handling.
+
+    Please note that on finish, a final status message will be shown even
+    if the spinner was never started.
+    """
+
     def start(self) -> None: ...
     def finish(self, label: str) -> None: ...
 
@@ -42,6 +52,8 @@ class RateLimiter:
 
 
 class _NoopSpinner(SpinnerInterface):
+    """No-op spinner for when absolutely zero output is desired."""
+
     def start(self) -> None:
         pass
 
@@ -50,12 +62,7 @@ class _NoopSpinner(SpinnerInterface):
 
 
 class _RichSpinner(SpinnerInterface):
-    """
-    Custom rich spinner that matches the style of the legacy spinners.
-
-    (*) Updates will be handled in a background thread by a rich live panel
-        which will call render() automatically at the appropriate time.
-    """
+    """Status spinner for interactive terminals."""
 
     def __init__(self, label: str, console: Console) -> None:
         self.label = label
@@ -67,6 +74,7 @@ class _RichSpinner(SpinnerInterface):
         self._live: Live | None = None
 
     def __rich__(self) -> Text:
+        # This is called as needed at the right pace by the rich live instance.
         if not self._finished:
             self._spinner_text = next(self._spin_cycle)
 
@@ -107,6 +115,8 @@ class _NonInteractiveSpinner(SpinnerInterface):
         self._print_line("started")
 
     def _print_line(self, message: str) -> None:
+        # NOTE: logger.info() can't be used here since logging may be captured
+        # while this spinner is active (e.g., when installing build dependencies).
         line = Text(f"{self._indent}{self._label}: {message}")
         self._console.print(line)
 
@@ -130,8 +140,13 @@ class _NonInteractiveSpinner(SpinnerInterface):
 def open_spinner(
     label: str, console: Console | None = None, *, autostart: bool = True
 ) -> Generator[SpinnerInterface]:
+    """Helper for opening a status spinner.
+
+    It will select the right spinner type for the current environment and
+    automatically handle starting and finishing the spinner as needed.
+    """
     if not logger.isEnabledFor(logging.INFO):
-        # Don't show spinner if --quiet is given.
+        # Don't write *anything* if --quiet is given.
         yield _NoopSpinner()
         return
 
