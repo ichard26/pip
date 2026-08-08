@@ -81,6 +81,9 @@ class FakeSpinner(SpinnerInterface):
     def __init__(self) -> None:
         self.final_status: str | None = None
 
+    def start(self) -> None:
+        pass
+
     def finish(self, final_status: str) -> None:
         self.final_status = final_status
 

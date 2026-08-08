@@ -7,16 +7,10 @@ import sys
 import time
 from collections.abc import Generator
 from threading import Event, Thread
-from typing import Any, Final, Protocol, Self
+from typing import Final, Protocol
 
-from pip._vendor.rich.console import (
-    Console,
-    ConsoleOptions,
-    RenderableType,
-    RenderResult,
-)
+from pip._vendor.rich.console import Console
 from pip._vendor.rich.live import Live
-from pip._vendor.rich.measure import Measurement
 from pip._vendor.rich.text import Text
 
 from pip._internal.utils.logging import get_console, get_indentation
@@ -72,24 +66,7 @@ class _RichSpinner(SpinnerInterface):
         self._indent = get_indentation() * " "
         self._live: Live | None = None
 
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *args: Any, **kwargs: Any) -> None:
-        self.finish("unknown")
-
-    def __rich_console__(
-        self, console: Console, options: ConsoleOptions
-    ) -> RenderResult:
-        yield self.render()
-
-    def __rich_measure__(
-        self, console: Console, options: ConsoleOptions
-    ) -> Measurement:
-        text = self.render()
-        return Measurement.get(console, options, text)
-
-    def render(self) -> RenderableType:
+    def __rich__(self) -> Text:
         if not self._finished:
             self._spinner_text = next(self._spin_cycle)
 
@@ -129,15 +106,6 @@ class _NonInteractiveSpinner(SpinnerInterface):
         self._finish_event = Event()
         self._print_line("started")
 
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *args: Any, **kwargs: Any) -> None:
-        # Normally this finish() is called before leaving the spinner context,
-        # but an unhandled exception may break this, so defensively tell the
-        # thread to stop (to avoid a possible hang).
-        self.finish("unknown")
-
     def _print_line(self, message: str) -> None:
         line = Text(f"{self._indent}{self._label}: {message}")
         self._console.print(line)
@@ -167,17 +135,20 @@ def open_spinner(
         yield _NoopSpinner()
         return
 
-    spinner_cls = _RichSpinner if sys.stdout.isatty() else _NonInteractiveSpinner
-    with spinner_cls(label, console or get_console()) as spinner:
-        try:
-            if autostart:
-                spinner.start()
-            yield spinner
-        except KeyboardInterrupt:
-            spinner.finish("canceled")
-            raise
-        except Exception:
-            spinner.finish("error")
-            raise
-        else:
-            spinner.finish("done")
+    console = console or get_console()
+    if sys.stdout.isatty():
+        spinner: SpinnerInterface = _RichSpinner(label, console)
+    else:
+        spinner = _NonInteractiveSpinner(label, console)
+    if autostart:
+        spinner.start()
+    try:
+        yield spinner
+    except KeyboardInterrupt:
+        spinner.finish("canceled")
+        raise
+    except Exception:
+        spinner.finish("error")
+        raise
+    finally:
+        spinner.finish("done")
