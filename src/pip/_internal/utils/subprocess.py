@@ -160,10 +160,6 @@ def call_subprocess(
 
             # Show the line immediately.
             log_subprocess(line)
-            # Update the spinner.
-            if use_spinner:
-                assert spinner
-                spinner.spin()
         try:
             proc.wait()
         finally:

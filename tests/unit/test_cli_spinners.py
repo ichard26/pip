@@ -11,7 +11,7 @@ import pytest
 from pip._vendor.rich.console import Console
 
 from pip._internal.cli import spinners
-from pip._internal.cli.spinners import open_rich_spinner
+from pip._internal.cli.spinners import open_spinner
 
 
 @contextmanager
@@ -25,7 +25,7 @@ def patch_logger_level(level: int) -> Generator[None]:
         spinners.logger.setLevel(original_level)
 
 
-class TestRichSpinner:
+class TestSpinner:
     @pytest.mark.parametrize(
         "status, func",
         [
@@ -42,7 +42,7 @@ class TestRichSpinner:
         stream = StringIO()
         try:
             with patch_logger_level(logging.INFO):
-                with open_rich_spinner("working", Console(file=stream)):
+                with open_spinner("working", Console(file=stream)):
                     func()
         except BaseException:
             pass
@@ -58,7 +58,7 @@ class TestRichSpinner:
         """Is the spinner hidden at the appropriate verbosity?"""
         stream = StringIO()
         with patch_logger_level(level):
-            with open_rich_spinner("working", Console(file=stream)):
+            with open_spinner("working", Console(file=stream)):
                 pass
 
         assert bool(stream.getvalue()) == visible
