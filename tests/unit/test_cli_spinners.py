@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from io import StringIO
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -25,40 +25,88 @@ def patch_logger_level(level: int) -> Generator[None]:
         spinners.logger.setLevel(original_level)
 
 
-class TestSpinner:
-    @pytest.mark.parametrize(
-        "status, func",
-        [
-            ("done", lambda: None),
-            ("error", lambda: 1 / 0),
-            ("canceled", Mock(side_effect=KeyboardInterrupt)),
-        ],
-    )
-    def test_finish(self, status: str, func: Callable[[], None]) -> None:
-        """
-        Check that the spinner finish message is set correctly depending
-        on how the spinner came to a stop.
-        """
-        stream = StringIO()
-        try:
-            with patch_logger_level(logging.INFO):
-                with open_spinner("working", Console(file=stream)):
-                    func()
-        except BaseException:
+@contextmanager
+def patch_stdout_isatty(isatty: bool) -> Generator[None]:
+    """Set the stdout mode used to select a spinner temporarily."""
+    with patch.object(spinners.sys, "stdout") as stdout:
+        stdout.isatty.return_value = isatty
+        yield
+
+
+@pytest.mark.parametrize(
+    "status, func",
+    [
+        ("done", lambda: None),
+        ("error", Mock(side_effect=ValueError)),
+        ("canceled", Mock(side_effect=KeyboardInterrupt)),
+    ],
+)
+@pytest.mark.parametrize(
+    "isatty, expected_output",
+    [
+        (True, "working ... {status}\n"),
+        (False, "working: started\nworking: finished with status '{status}'\n"),
+    ],
+)
+def test_finish(
+    status: str, func: Callable[[], None], isatty: bool, expected_output: str
+) -> None:
+    """Check that the helper reports final statuses in each stdout mode."""
+    stream = StringIO()
+    try:
+        with patch_logger_level(logging.INFO), patch_stdout_isatty(isatty):
+            with open_spinner("working", Console(file=stream), autostart=False):
+                func()
+    except BaseException:
+        pass
+
+    assert stream.getvalue() == expected_output.format(status=status)
+
+
+@pytest.mark.parametrize(
+    "level, isatty, expected_type",
+    [
+        (logging.INFO, True, spinners._RichSpinner),
+        (logging.WARNING, True, spinners._NoopSpinner),
+        (logging.INFO, False, spinners._NonInteractiveSpinner),
+        (logging.ERROR, False, spinners._NoopSpinner),
+    ],
+)
+def test_selects_spinner_for_environment(
+    level: int, isatty: bool, expected_type: type[object]
+) -> None:
+    """Check that spinner selection follows verbosity and stdout mode."""
+    with patch_logger_level(level), patch_stdout_isatty(isatty):
+        with open_spinner("working", Console(), autostart=False) as spinner:
+            assert isinstance(spinner, expected_type)
+
+
+@pytest.mark.parametrize(
+    "isatty, spinner_type",
+    [(True, spinners._RichSpinner), (False, spinners._NonInteractiveSpinner)],
+)
+@pytest.mark.parametrize("autostart", [False, True])
+def test_starts_spinner_when_requested(
+    isatty: bool, spinner_type: type[object], autostart: bool
+) -> None:
+    """Check that autostart controls whether the selected spinner starts."""
+    with (
+        patch_logger_level(logging.INFO),
+        patch_stdout_isatty(isatty),
+        patch.object(spinner_type, "start") as start,
+    ):
+        with open_spinner("working", Console(), autostart=autostart):
             pass
 
-        output = stream.getvalue()
-        assert output == f"working ... {status}"
+    assert start.called is autostart
 
-    @pytest.mark.parametrize(
-        "level, visible",
-        [(logging.ERROR, False), (logging.INFO, True), (logging.DEBUG, True)],
-    )
-    def test_verbosity(self, level: int, visible: bool) -> None:
-        """Is the spinner hidden at the appropriate verbosity?"""
-        stream = StringIO()
-        with patch_logger_level(level):
-            with open_spinner("working", Console(file=stream)):
-                pass
 
-        assert bool(stream.getvalue()) == visible
+def test_no_op_spinner_does_not_write_output() -> None:
+    """Check that quiet mode suppresses all spinner output."""
+    stream = StringIO()
+    with patch_logger_level(logging.ERROR):
+        with open_spinner("working", Console(file=stream)) as spinner:
+            spinner.start()
+            spinner.finish("done")
+
+    assert stream.getvalue() == ""

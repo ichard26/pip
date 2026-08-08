@@ -79,10 +79,11 @@ def test_call_subprocess_stdout_only(
 
 class FakeSpinner(SpinnerInterface):
     def __init__(self) -> None:
+        self.did_start = False
         self.final_status: str | None = None
 
     def start(self) -> None:
-        pass
+        self.did_start = True
 
     def finish(self, final_status: str) -> None:
         self.final_status = final_status
@@ -101,7 +102,7 @@ class TestCallSubprocess:
         spinner: FakeSpinner,
         result: str | None,
         expected: tuple[list[str] | None, list[tuple[str, int, str]]],
-        expected_spinner_status: str | None,
+        expected_spinner: tuple[bool, str | None],
     ) -> None:
         """
         Check the result of calling call_subprocess().
@@ -116,7 +117,8 @@ class TestCallSubprocess:
               value is expected to be None;
             2) `expected_records` is the expected value of
               caplog.record_tuples.
-        :param expected_spinner_status: the spinner's expected final status
+        :param expected_spinner: the spinner's expected (did_start,
+                                 final_status)
         """
         expected_proc, expected_records = expected
 
@@ -145,7 +147,7 @@ class TestCallSubprocess:
             # chronologically.
             assert expected_record[2] in record[2]
 
-        assert spinner.final_status == expected_spinner_status
+        assert (spinner.did_start, spinner.final_status) == expected_spinner
 
     def prepare_call(
         self,
@@ -184,6 +186,8 @@ class TestCallSubprocess:
                 ("pip.subprocessor", VERBOSE, "world"),
             ],
         )
+        # The spinner shouldn't spin in this case since the subprocess
+        # output is already being logged to the console.
         self.check_result(
             capfd,
             caplog,
@@ -191,7 +195,7 @@ class TestCallSubprocess:
             spinner,
             result,
             expected,
-            expected_spinner_status=None,
+            expected_spinner=(False, None),
         )
 
     def test_info_logging(
@@ -212,6 +216,8 @@ class TestCallSubprocess:
             ["Hello", "world"],
             [],
         )
+        # The spinner should spin since the subprocess output isn't being
+        # written to the console.
         self.check_result(
             capfd,
             caplog,
@@ -219,7 +225,7 @@ class TestCallSubprocess:
             spinner,
             result,
             expected,
-            expected_spinner_status="done",
+            expected_spinner=(True, "done"),
         )
 
     def test_info_logging__subprocess_error(
@@ -259,6 +265,8 @@ class TestCallSubprocess:
                 ("pip.subprocessor", ERROR, "subprocess error exited with 1"),
             ],
         )
+        # The spinner should spin since the subprocess output isn't
+        # being written to the console.
         self.check_result(
             capfd,
             caplog,
@@ -266,7 +274,7 @@ class TestCallSubprocess:
             spinner,
             result,
             expected,
-            expected_spinner_status="error",
+            expected_spinner=(True, "error"),
         )
 
     def test_info_logging_with_show_stdout_true(
@@ -292,6 +300,8 @@ class TestCallSubprocess:
                 ("pip.subprocessor", INFO, "world"),
             ],
         )
+        # The spinner shouldn't spin in this case since the subprocess
+        # output is already being written to the console.
         self.check_result(
             capfd,
             caplog,
@@ -299,7 +309,7 @@ class TestCallSubprocess:
             spinner,
             result,
             expected,
-            expected_spinner_status=None,
+            expected_spinner=(False, None),
         )
 
     @pytest.mark.parametrize(
